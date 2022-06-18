@@ -1,0 +1,161 @@
+---
+title: "Muestras Complejas"
+author: "LMT"
+date: "mayo de 2022"
+output: html_document
+---
+
+
+**Encuestas complejas**
+
+Se llama muestra o encuesta compleja cuando se tienen al menos 2 de las siguientes características:
+
+- Estratos
+- Varias etapas de muestreo
+- Estimadores de razón
+
+
+Usaremos datos del Censo 2010. [Censo 2010](https://www.inegi.org.mx/programas/ccpv/2010/#Microdatos).
+
+
+**Descripción de los datos**
+
+Para el levantamiento de la muestra censal 2010 se diseñó un cuestionario ampliado, con el que fueron censadas alrededor de 2.9 millones de viviendas en el país, seleccionadas con criterios probabilísticos.
+
+Consta de 2 cuestionarios: básico y ampliado. 
+
+**Objetivos**. Por medio de la muestra censal se estiman tasas, promedios y proporciones.
+
+**Diseño**. El diseño de la muestra censal 2010 es estratificado por conglomerados y se realizó en una sola etapa de selección, es decir, se seleccionan áreas geográficas completas, ya sean manzanas o localidades. Dentro de estas áreas se aplica el cuestionario ampliado a todas las viviendas particulares habitadas
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+library(stringr)
+
+library(haven)
+```
+
+
+
+
+**Estimación del total de Viviendas en la Ciudad de México**
+
+Leer datos de viviendas
+```{r}
+viviendas_09a <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_09_sas/viviendas_09_a.sas7bdat", NULL)
+glimpse(viviendas_09a)
+```
+
+
+Estimación de Viviendas y Personas (considerando los filtros ocupados por el INEGI)
+
+```{r}
+viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS)) %>% 
+           summarise(num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas))
+```
+
+
+
+---
+
+Corroboremos los resultados obtenidos usando una librería de R diseñada para muestreo.
+
+Cargamos librería
+```{r}
+suppressMessages(library(survey))
+```
+
+Filtrar datos
+
+```{r}
+muestra <- viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS),
+         unos = 1) 
+```
+
+Cuando tenemos estratos con 1 sola observación y queremos que no contribuya a la varianza usamos la siguiente opción.
+
+```{r}
+options(survey.lonely.psu = "certainty")
+```
+
+Definir diseño 
+```{r}
+disenio_complejo <-svydesign(id=~UPM,strata = ~ESTRATO, weights=~FACTOR,data=muestra, nest=TRUE)
+
+```
+
+Estimación
+```{r}
+estimacion_total_viv <-  svytotal(~unos,disenio_complejo)
+estimacion_total_viv
+```
+
+
+Intervalos de Confianza
+```{r}
+confint(estimacion_total_viv,level=0.90)
+```
+
+
+```{r}
+confint(estimacion_total_viv,level=0.95)
+```
+
+Coeficiente de variación
+```{r}
+cv(estimacion_total_viv)
+```
+
+
+---
+
+Podemos hacer estimaciones por delegación (municipio)
+
+```{r}
+#help("svyby")
+est_total_viv_mun <- svyby(~unos, by = ~NOM_MUN, disenio_complejo,svytotal)
+est_total_viv_mun
+```
+
+
+
+Intervalos de Confianza
+```{r}
+confint(est_total_viv_mun,level=0.90)
+```
+
+
+Grafica de la estimación del número de viviendas.
+
+```{r}
+viviendas_x_municipio <- viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS), unos = 1) %>% 
+  group_by(ENT, NOM_ENT, MUN, NOM_MUN) %>%  
+  summarise( registros = n(), num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas)) %>% 
+  ungroup()
+
+#viviendas_x_municipio
+```
+
+
+```{r}
+ggplot(data = viviendas_x_municipio) +
+geom_col(mapping = aes(x = reorder(NOM_MUN,num_viviendas, desc = TRUE), y = num_viviendas)) +
+coord_flip()
+```
+

@@ -1,0 +1,532 @@
+---
+title: "04 Post-Estratificacion"
+author: "LMT"
+date: "marzo de 2022"
+output: html_document
+---
+
+
+### Post-Estratificación
+
+¿Para qué sirve?. Veamos un ejemplo particular antes de abordar la forma general.
+
+Si intentamos hacer una muestra de 100 para una población de 1,000 y sólo obtenemos respuesta de 76, la fracción de muestreo no es 100/1,000 sino 76/1,000. La corrección al factor de expansión es lo que la post-estratificacion hace.
+
+**pregunta** ¿Qué puede ocasionar datos faltantes en su información?.
+
+Dos puntos a consderar. Necesitamos calibrar nuestros factores de expansión para que ajusten con el total poblacional y además nos ayuda a conocer el porcentaje de no respuesta por lo que si habíamos  considerado que requeriamos un tamaño $n$ para cumplir con intervalos con cierto nivel de confianza y un margen de error fijado, requeriremos mayor muestra.  ¿cuánta muestra más?. Si revisamos la nota metodológica de encuestas como el Censo o ENIGH veremos que el tamaño de muestra lo ajustan  utilizando la siguiente expresión.
+
+$\text{n ajustada} = \frac{n \cdot deff}{1 - tnr}$
+
+donde $tnr$ es la tasa de no respuesta
+
+De momento  nosotros sólo utilizaremos la tasa de no respuesta. Por lo que nuestro tamaño de muestra para futuros estudios queda de la siguiente manera.
+
+$\text{n ajustada} = \frac{n}{1 - tnr}$
+
+
+Para el ejemplo utilizaemos los datos de personas de aguascalientes del censo de 2010. Consideraremos los datos como nuestro universo (Población) y la variable de municipo como la variable de estrato.
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+
+suppressMessages(library(survey))
+
+library(haven) # Permite leer tablas en formato guardado por SAS
+```
+
+
+Leer datos
+
+```{r}
+personas_01 <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_01_sas/personas_01_a.sas7bdat", NULL) %>% 
+  # Conservar sólo ciertas variables
+  select(ENT,NOM_ENT, MUN, NOM_MUN, ID_VIV, ID_PER, NUMPER, SEXO, EDAD, PARENT, IDMADRE, NIVACAD, ESCOACUM, ALFABET,NUMHIJ) %>% 
+  # Convertir la edad a númerica
+  mutate(edad_numerica = parse_number(EDAD))
+
+glimpse(personas_01)
+```
+
+¿Cuántas personas hay y cuál es la edad promedio?
+
+```{r}
+personas_01 %>% summarise(num_personas = n_distinct(ID_PER), promedio_edad = mean(edad_numerica), sd_edad = sd(edad_numerica), min_edad = min(edad_numerica), max_edad = max(edad_numerica))
+```
+
+¿Cuál es el número de elementos (personas) por estrato?
+
+```{r}
+personas_01 %>% group_by(ENT,MUN) %>% 
+  summarise(num_personas = n_distinct(ID_PER), promedio_edad = mean(edad_numerica), sd_edad = sd(edad_numerica))
+```
+
+¿Cuánta muestra se necesita si se quisiera estimar la edad promedio con un margen de error de 2 años y para un intervalo de confianza del 90%? 
+
+$$ n >  (\frac{z \cdot s}{me})^2$$
+
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+me <- 2
+s <- 28.11551	
+```
+
+Notar que el 28.11 incluye los registros donde edad es igual a 999 que corresponde a un valor missing. Se dejo intencionalmente para evidenciar posibles errores al manejar la información.
+
+
+```{r}
+((z*s)/me)**2
+```
+
+Así, nuestra muestra debe ser de `r round(((z*s)/me)**2)`
+
+
+Calcular el tamaño de muestra para cada estrato, así como su factor de expansión correspondiente
+
+El tamao de muestra en cada estrato está dado por 
+
+$n_h = n \frac{N_h}{N} = nW_h$
+
+
+```{r}
+n <- 535
+
+tabla_factores <- personas_01 %>% group_by(ENT,MUN) %>% 
+    summarise(Nh = n()) %>% 
+    mutate(nh = round(n*(Nh/sum(Nh))),
+           factorh = Nh/nh) %>% 
+  ungroup()
+
+print(tabla_factores)
+
+```
+
+
+Seleccionemos una muestra estratificada
+
+```{r}
+
+vector_estratos <- tabla_factores %>% select(MUN) %>% pull()
+vector_nh <- tabla_factores %>% select(nh) %>% pull()
+vector_fh <- tabla_factores %>% select(factorh) %>% pull()
+
+
+#Incicializar la muestra vacia
+muestra_estratificada <- personas_01 %>% filter(0 == 1)
+k <- length(vector_estratos)
+
+# Fijar semilla
+set.seed(2021)
+for (i in 1:k) {
+  muestra_i <- personas_01 %>% 
+    # Filtrar registros de estrato correspondiente
+    filter(MUN == vector_estratos[i]) %>% 
+    # Obtener muestra de tamaño correspondiente
+    sample_n(vector_nh[i]) %>% 
+    # Agregar el factor de expansión
+    mutate(fh = vector_fh[i])
+  
+# Hacer un append a la tabla muestra_estratificada
+muestra_estratificada <- bind_rows(muestra_estratificada, muestra_i)
+}
+
+```
+
+```{r}
+dim(muestra_estratificada)
+head(muestra_estratificada)
+```
+
+
+Simulareros una **no respuesta** del 16% en total por lo que sólo tendremos unas 480 encuestas útiles. El 16% es bastante alto, pero es para ejemplificar como se ven afectados los factores de expansión
+
+```{r}
+set.seed(1234)
+datos_encuestas <- muestra_estratificada %>% 
+                  select(ENT,MUN,ID_PER,SEXO,edad_numerica,fh) %>% 
+                  mutate(u = runif(sum(vector_nh)),
+                         edad_encuesta = ifelse(u < 0.16 | edad_numerica == 999,NA,edad_numerica))
+
+head(datos_encuestas, n = 10)
+```
+
+Obtener el número de encuestas con missings
+
+```{r}
+tabla_missings <- datos_encuestas %>% 
+                  group_by(ENT,MUN) %>% 
+                  summarise(num_encuestas = n(), num_missings = sum(is.na(edad_encuesta)), num_validos = sum(!is.na(edad_encuesta)))
+  
+tabla_missings
+```
+
+Por la forma del ejemplo, tenemos que desechar las encuentas con missings en la variable de nuestro interés que es la edad. De un esperado de 535 nos quedamos con 455 encuestas válidas.
+
+```{r}
+datos_encuestas_ok <- datos_encuestas %>% filter(!is.na(edad_encuesta))
+dim(datos_encuestas_ok)
+```
+
+
+Necesitamos _calibrar_ nuestros factores de expansión para que la muestra expanda el total, en este caso personas.
+
+```{r}
+tabla_calibracion <- left_join(tabla_factores,tabla_missings, by = c("ENT","MUN")) %>% 
+                      #calibración
+                      mutate(fh_ajustado = Nh / num_validos)
+
+glimpse(tabla_calibracion)
+```
+
+**Ejercicio**. Pegarle los factores ajustados a los `datos_encuestas_ok` y corroborar que los factores expanden la muestra
+
+
+```{r echo= FALSE}
+tabla_calibracion %>% summarise(total = sum(num_validos*fh_ajustado))
+```
+
+
+**Ejercicio**. tomar la tabla `datos_encuestas_ok` y hacer la estimación de la edad promedio con su intervalo de confianza.
+
+
+Haciendo la consideración de que puede haber no respuesta, ajustariamos el tamaño de muestra. Con lo que para nuestro ejemplo con esa _tnr_ tan alta necesitariamos que la $n$ fuera de 637.
+
+```{r}
+535/(1-0.16)
+```
+
+
+Notar que el tamaño de muestra se calculó bajo muestreo aleatorio simple y no bajo muestreo estratificado, se debe hacer el ajuste. 
+
+**participación alumnos**. ¿Cómo esperan que sea el tamaño de muestra?. ¿menor?, ¿mayor?
+
+Ocupemos la fórmula para el tamaño de muestra para la media bajo muestreo estratificado.
+
+
+$$n = \frac{N \Sigma_h N_h S^2_h}{N^2 \frac{\delta^2}{z^2_{1-\frac{\alpha}{2}}} + \Sigma_h N_h S^2_h}$$
+
+```{r}
+
+tabla_Sh2 <- personas_01 %>% group_by(ENT,MUN) %>% 
+    summarise(Nh = n(), Sh2 = var(edad_numerica)) %>% 
+    ungroup()
+
+print(tabla_Sh2)
+
+```
+
+
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+d <- 2
+
+N <- tabla_Sh2 %>% summarise(N = sum(Nh)) %>% select(N) %>% pull()
+
+componentes_n <- tabla_Sh2 %>% summarise(numerador = N*sum(Nh*(Sh2)), 
+                                         denominador = (N**2)*((d**2/z**2))+ sum(Nh*(Sh2))) %>% 
+                mutate(n = numerador / denominador)
+  
+n <- componentes_n %>% select(n) %>% pull()
+print(componentes_n)
+```
+
+Con esto vemos que la n disminuye poco más de 5 unidades
+
+**Ejercicio**. Si les dijera que el tamaño de muestra será 800. 
+
+1. Dejando fija la confianza, ¿qué valor de margen de error dariían?. En otras palabras, ¿qué margen de error pueden garantizar con una muestra de 800?.
+
+2. Dejando fijo el margen de error ¿qué valor de confianza darían?.
+
+3. ¿Cuál sería su elección de confianza y margen de error que propondrían?.
+
+
+
+Una de las soluciones más sencillas es usar **goal seek** en excel, sobre todo si la fórmula no tiene una expresión analítica que pueda despejarse, sólo necesitamos exportar la tabla `tabla_Sh2` calculada previavente para facilitar las operaciones.
+
+En ese caso particular, podemos despejar alguna de las variables, fijar el tamaño de muestra e iterar sobre el otro parametro para ver las combinaciones que arrojan el tamaño de muestra fijado.
+
+Utilizaremos una función auxiliar para iterar sobre dicha función. El parámetro que la función recibirá es alpha y nos regresará el valor de delta para una n fijada en 800.
+
+```{r}
+funcion_delta <- function(alpha) {
+  
+  #alpha <- 0.10
+  z <- qnorm(1-alpha/2)
+  n <- 800
+  #d <- 2
+  
+  N <- tabla_Sh2 %>% summarise(N = sum(Nh)) %>% select(N) %>% pull()
+  
+  calculo <- tabla_Sh2 %>% summarise(d = ((N/n - 1)*sum(Nh*(Sh2)))*(z**2)/(N**2)) 
+  
+  d <- calculo %>% select(d) %>% pull()
+  return(sqrt(d))
+  
+}
+
+```
+
+Iteramos sobre distintos valores de alpha
+```{r}
+vector_alphas <- seq(from = 0.001, to = 0.20, by = 0.001)
+vector_deltas <- vector(length = length(vector_alphas))
+
+for(i in 1:length(vector_alphas)) { 
+  vector_deltas[i] <- funcion_delta(vector_alphas[i])}
+
+```
+
+Graficamos
+```{r}
+datos_delta_vs_alpha <- data.frame(alpha = vector_alphas, delta =vector_deltas) %>% 
+  mutate(confianza = 1 - alpha)
+head(datos_delta_vs_alpha)
+```
+
+
+```{r}
+ggplot(datos_delta_vs_alpha) +
+  geom_point(mapping = aes(x = delta, y= confianza), alpha = 0.65 ) + 
+  scale_x_continuous(limits = c(0,4))
+```
+
+Si nos interesara algun valor particular de confianza o delta podemos filtrar para conocer los valores excatos de los parámetros involucrados
+
+```{r}
+datos_delta_vs_alpha %>% filter(confianza %in% c(0.90,0.95,0.99))
+```
+
+
+### Post Estratificación
+
+En algunos casos se querrá que las frecuencias de variables importantes en la muestra sean más representativas y por ello se ajustan los factores de expansión para qué tomen en cuenta las proporciones poblacionales de las variables categóricas de mayor interés.
+
+Se conocen las frecuencias de cada categoría en la población, los factores de expansión se ajustan para coincidir con esas frecuencias.
+
+La post-estratificación es un procedimiento similar a la estratificación, con la diferencia de que es realizada después de haber obtenido los resultados de las encuestas, es decir, una vez que ya contamos con los datos obtenidos de campo.
+
+Consiste en la creación de nuevos grupos llamados post-estratos, se utiliza para corregir los efectos de la no respuesta o para afinar (ajustar) los factores de expansión.
+
+Para calcular el factor de cada post-estrato se puede tomar la siguiente fórmula
+
+$\text{factor post} = \frac{N_h}{n_m}$
+
+notar que  $n_m$ se refiere al número de elementos de la muestra que fueron efectivamente recabados de la labor de campo. $N_h$ es el número de elementos de la población en el estrato h
+
+
+Por ejemplo, consideremos hacer post-estratificación de la variable sexo. El número de elementos por sexo en la población es
+```{r}
+personas_01 %>% group_by(SEXO) %>%  summarise(Freq = n())
+```
+
+
+Tomar una muestra de 800
+```{r}
+N <- dim(personas_01)[1]
+
+set.seed(123)
+muestra_mas <- personas_01 %>% 
+              sample_n(800) %>% 
+              # crear la variable de factor de expasión
+              mutate(factor_mas = N/800, fpc = 800/N)
+
+#glimpse(muestra_mas)
+```
+
+Validar el factor de expansión
+```{r}
+muestra_mas %>% summarise(Total = sum(factor_mas))
+```
+
+Revisar el total para hombres y mujeres
+```{r}
+muestra_mas %>% group_by(SEXO) %>% summarise(Total = sum(factor_mas))
+```
+
+Como vemos, los factores expanden correctamente el total de la población, pero no es así para la variable sexo. 
+
+¿Cuál es el factor de expansión de cada elemento?. ¿Cómo se ajustarían los factores si quisieramos que los subtotales (marginales) por sexo coincidieran con los de la población?
+
+```{r, message=FALSE}
+Nh <- personas_01 %>% group_by(SEXO) %>%  summarise(Freq = n()) %>% select(Freq) %>% pull()
+nh <- muestra_mas %>% group_by(SEXO) %>% summarise(nh = n()) %>% select(nh) %>% pull()
+
+Nh/nh
+```
+
+Estos serían los nuevos factores de la variable sexo para las categorías 1 y 3 respectivamente, mientras que el factor original era 87.255 
+
+¿Cómo hubieran quedado los factores si inicialmente se hubiera planteado estratificar por sexo?
+
+
+Crear vector de estratos y tamaños de muestra por estrato
+```{r}
+n <- 800
+tabla_auxiliar <- personas_01 %>% group_by(SEXO) %>% 
+    summarise(Nh = n()) %>% 
+    mutate(nh = round(n*(Nh/sum(Nh))),
+           factorh = Nh/nh)
+
+print(tabla_auxiliar)
+
+```
+
+Recapitulando, ¿qué diferencia hay entre estratificar y post-estratificar?.
+
+---
+
+La librería survey en R nos permite hacer post-estratificación con la función `postStratify`
+
+Se debe definir el diseño
+
+```{r}
+disenio_mas <- svydesign( id =~1, data = muestra_mas, weights = ~factor_mas , fpc = ~fpc)
+```
+
+Se debe definir la  tabla con los valores poblacionales
+
+```{r, message=FALSE}
+totales_poblacion_sexo <- personas_01 %>% group_by(SEXO) %>% summarise(Freq = n())
+```
+
+
+La función generará un objeto con el diseño ajustado por la post-estratificación con los pesos correspondientes
+```{r}
+post_est_design <- 
+  postStratify(
+  	disenio_mas , # diseño 
+		strata = ~SEXO , #variable de estratificación
+		population = totales_poblacion_sexo # Tabla con valores poblacionales para la variable de estratificación
+	)
+	
+```
+
+El elemento postStrata del objeto creado por la función `postStratify` contiene los pesos originales y los pesos ajustados
+```{r}
+x_post <- post_est_design$postStrata[[1]]
+oldweights_post <- attributes(x_post)$oldweights %>% as.vector()
+weights_post <- attributes(x_post)$weights %>% as.vector()
+```
+
+```{r}
+table(weights_post,oldweights_post)
+```
+
+
+Se pueden hacer estimaciones usando el nuevo objeto del diseño con los factores ajustados
+```{r}
+svyby(~edad_numerica, ~SEXO, post_est_design, svymean)
+```
+
+Agregarle los pesos de posst-estratificación a la muestra
+
+```{r}
+# glimpse(muestra_mas)
+muestra_mas2 <- muestra_mas %>% 
+                mutate(factor_post = weights_post)
+```
+
+
+```{r}
+muestra_mas2 %>% group_by(SEXO,factor_mas,factor_post) %>% summarise(n = n())
+```
+
+
+
+**Raking**
+
+El ajuste anterior se puede ver como una tabla de contingencia donde cada celda representa un post-estrato y para hacer el ajuste es necesario se en la muestra salgan seleccionados elementos que caigan en cada categoría. 
+
+Se han desarrollado algotitmos iterativos que ajustan los pesos sin necesidad de tener información de cada celda, se usan los totales marginales,  donde se itera hasta la convergencia de los totales objetivo de las variables marginales.
+
+Revisar el algoritmo raking para conocer mayor detalle.
+
+Realizaremos un ejemplo con la versión del algoritmo implementada en el paquete survey
+
+Definir tabla con los valores poblacionales
+
+```{r, message=FALSE}
+totales_poblacion_sexo <- personas_01 %>% group_by(SEXO) %>% summarise(Freq = n())
+totales_poblacion_alfabet <- personas_01 %>% group_by(ALFABET) %>% summarise(Freq = n())
+```
+
+
+```{r}
+rake_design <- 
+  rake(
+  	disenio_mas ,
+		sample = list(~SEXO, ~ALFABET) ,
+		population = list(totales_poblacion_sexo, totales_poblacion_alfabet)
+	)
+	
+```
+
+
+Totales poblacionales
+
+```{r}
+personas_01 %>% group_by(ALFABET) %>% summarise( total = n())
+personas_01 %>% group_by(ALFABET) %>% summarise( total = n())
+```
+
+
+Estimar totales
+
+
+Sin post estratificación
+```{r}
+svytotal(~SEXO+ALFABET,disenio_mas)
+```
+
+
+vemos como se ajustaron los pesos
+
+```{r}
+x_rake <- rake_design$postStrata[[1]][[1]]
+#oldweights_rake <- attributes(x_rake)$oldweights %>% as.vector()
+weights_rake <- attributes(x_rake)$weights %>% as.vector()
+```
+
+```{r}
+data.frame(weights_rake) %>% group_by(weights_rake) %>% summarise(n = n())
+```
+
+
+
+Agregarle los pesos de la función rake rake a la muestra
+
+```{r}
+# glimpse(muestra_mas)
+muestra_mas3 <- muestra_mas %>% 
+                mutate(factor_rake = weights_rake)
+```
+
+
+```{r}
+muestra_mas3 %>% group_by(SEXO,ALFABET,factor_mas,factor_rake) %>% summarise(n = n())
+```
+
+
+
+**inconvenientes de la post-estratificación**
+
+- En casos muy particulares se pueden tener pesos muy fuertes
+
+
+
+
+
+
+

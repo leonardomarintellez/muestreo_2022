@@ -1,0 +1,427 @@
+---
+title: "03 Estimaciones"
+author: "LMT"
+date: "abril de 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Usaremos datos ficticios de `Tlaxcala` similares a los del Censo 2010. 
+
+
+**Descripción de los datos**
+
+Para el levantamiento de la muestra censal 2010 se diseñó un cuestionario ampliado, con el que fueron censadas alrededor de 2.9 millones de viviendas en el país, seleccionadas con criterios probabilísticos.
+
+Consta de 2 cuestionarios: básico y ampliado. 
+
+**Objetivos**. Por medio de la muestra censal se estiman tasas, promedios y proporciones.
+
+**Diseño**. El diseño de la muestra censal 2010 es estratificado por conglomerados y se realizó en una sola etapa de selección, es decir, se seleccionan áreas geográficas completas, ya sean manzanas o localidades. Dentro de estas áreas se aplica el cuestionario ampliado a todas las viviendas particulares habitadas
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+library(stringr)
+
+library(haven)
+```
+
+
+Leer datos de viviendas
+
+```{r}
+viviendas_29b <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_29_sas/viviendas_29b.sas7bdat", NULL) %>% 
+                  # crear variables númericas para el número de cuartos y elnúmero de personas
+                  mutate(TOTAL_CUARTOS = as.numeric(TOTCUART), 
+                         NUM_PERSONAS = as.numeric(NUMPERS))
+#glimpse(viviendas_29b)
+```
+
+Datos poblacionales
+
+Número de municipios y agebs
+```{r}
+viviendas_29b %>% summarise(num_municipios = n_distinct(MUN), num_agebs = n_distinct(AGEB))
+```
+
+Número de viviendas y personas
+```{r}
+viviendas_29b %>% summarise(num_viviendas = n_distinct(ID_VIV), num_personas = sum(NUM_PERSONAS))
+
+```
+
+
+
+**participación alumnos**. ¿recuerdan qué es una ageb?. 
+
+El Marco Geoestadístico Nacional es un sistema único y de carácter nacional diseñado por el INEGI para referenciar correctamente la información estadística de los censos y encuestas con los lugares geográficos correspondientes.
+El Marco Geoestadístico Nacional está conformado por áreas geoestadísticas. Una **ageb** (área geoestadística básica) constituye la unidad básica del Marco Geoestadístico Nacional.Para mayor referencia consultar la cartografía estadística del INEGI.
+
+
+---
+
+Graficar las áreas geograficas de municipios y distritos electorales para ver como nos conviene segmentar los conglomerados.
+
+```{r}
+#Cargar librería para graficar mapas
+library(sf)
+```
+
+
+Los shapefiles del marco geoestadístico 2010 del INEGI pueden descargarse del siguiente enlace [Cartografía INEGI](https://www.inegi.org.mx/temas/mg/#Descargas)
+
+```{r}
+# Leer el dataframe de shapes de municipios
+shapes_municipios <- st_read("/home/leonardo/Documentos/Acatlan/Datos/SHAPEFILES/marco_geoestadistico_2010/municipios/Municipios_2010_5.shp")
+```
+
+
+
+
+Los shapefiles de los distritos electorales pueden descargarse del siguiente enlace [Cartografía IFE](http://cartografia.ife.org.mx/sige7/?distritacion=local)
+
+
+```{r}
+# Leer el dataframe que contiene los poligonos de los distritos electorales de Tlaxcala
+shapes_distritos_tlaxcala <- st_read("/home/leonardo/Documentos/Acatlan/Datos/SHAPEFILES/cartografia_ife/29/DISTRITO_LOCAL.shp")
+```
+
+
+```{r}
+shapes_municipios_tlaxcala <- shapes_municipios %>% filter(CVE_ENT == '29')
+```
+
+A continuación se muestra el mapa de Tlaxcala dividido por municipios
+```{r}
+ggplot(shapes_municipios_tlaxcala) + 
+  geom_sf()
+```
+
+Así se ve el mapa de Tlaxcala dividido por distritos electorales del INE.
+
+```{r}
+ggplot(shapes_distritos_tlaxcala) +
+  geom_sf()
+```
+
+**participación alumnos**. Con la información que disponemos, ¿es posible que los congomerados sean distritos electorales?.
+
+---
+
+## Estimación de Totales. 
+
+Estimar el Total de Personas utilizando los datos de Viviendas. 
+
+Tomar muestras en 2 etapas para distintos número de conglomerados y distintos tamaños de muestra. Notar que la muestra Tlaxcala en los microdatos del censo de 2010 es aproximadamente de 50,000 viviendas.
+
+Para cada muestra, calcular la varianza del estimador. Reportar el valor de cada componente de la varianza (varianza entre clusters y varianza dentro de los clusters).
+
+
+**Ejemplo 1**
+
+Realizar el ejercico por pasos
+
+Nuestros conglomerados serán los municipios
+
+```{r}
+# Obtener los distintos Clusters
+clusters <- viviendas_29b %>% select(MUN) %>% pull() %>% unique() 
+print(clusters)
+
+# Obtener el número total de clusters
+N <- length(clusters) 
+print(N)
+```
+
+Tenemos 60 conglomerados. 
+
+**Ejercicio SAS**. Cargar la tabla de viviendas de Tlaxcala (viviendas_29b.sas7bdat) y obtener el número de conglomerados si en lugar de municipios, utilizaramos la variable de agebs.
+
+Hagamos pruebas para ver como afecta a la varianza el número de conglomerados elegidos.
+
+```{r}
+# asignar el valor de n (el número de clusters que seleccionaremos en la muestra)
+n <- 20
+
+# slececcionar los 20 clusters de manera aleatoria
+set.seed(1234)
+sample_clusters <- sample(clusters,n)
+print(sample_clusters)
+
+```
+
+```{r}
+# declarar el tamaño de muestra total que se seleccionará. 
+k <- 50000
+
+
+#Asignar el tamaño de muestra de manera proporcional para cada cluster
+
+tabla_aux1 <- viviendas_29b %>%  
+              filter(MUN %in% sample_clusters) %>%  # sólo conservar los clusters que salieron en la muestra
+              group_by(ENT,MUN) %>%
+              summarise(Mi = n()) %>% 
+              mutate(mi = round(k*(Mi/sum(Mi))), # asignar la muestra de manera proporcional
+                     f1 = (N/n), # determinar el factor para cada cluster
+                     f2 = Mi/mi, # determinar el factor dentro de cada cluster
+                     factor = f1*f2,
+                     unos = 1) %>%  # factor total para cada elemento
+              ungroup() %>% # desagrupar
+              arrange(desc(Mi)) # ordenar por el cluster con mayor número de elementos
+
+print(tabla_aux1)
+
+```
+
+Visualizar que conglomerados fueron seleccionados.
+
+
+
+Unir la info de la tabla auxiliar a la tabla de los shapes de Tlaxcala
+```{r}
+conglomerados_seleccionados <- shapes_municipios_tlaxcala %>% 
+  left_join(tabla_aux1, by = c("CVE_ENT" = "ENT","CVE_MUN"="MUN")) %>% 
+  mutate(clave_etiqueta = ifelse(is.na(unos),"",CVE_MUN))
+```
+
+
+Crear mapa
+```{r}
+conglomerados_seleccionados %>%
+  ggplot(aes(fill = unos)) +
+  geom_sf(colour = "grey", size = 0.35) +
+  labs(title = "Conglomerados seleccionados",
+       subtitle = "Tlaxcala",
+       caption = "Fuente: INEGI") +
+  theme_bw()  +
+  geom_sf_text(aes(label = clave_etiqueta))
+```
+
+Si replican el ejemplo, muy seguramente obtendrán otros conglomerados por su versión de R y su sistema operativo.
+
+**Ejercicio SAS**. ¿Qué municipio de los seleccionados tiene mayor número de personas? 
+
+```{r, echo=FALSE, include=FALSE}
+viviendas_29b %>% filter(MUN %in%sample_clusters) %>% 
+                group_by(MUN) %>% 
+                summarise(num_personas = sum(NUM_PERSONAS)) %>% 
+                arrange(desc(num_personas))
+```
+
+
+
+Así como lo haciamos en muestreo estratificado, extraigamos una muestra de forma similar para cada conglomerado elegido.
+
+```{r}
+# De la tabla auxiliar extraigamos los vectores que nos ayudarán a hacer la muestra para cada cluster
+
+vector_clusters <- tabla_aux1 %>% select(MUN) %>% pull()
+vector_factores <- tabla_aux1 %>% select(factor) %>% pull()
+vector_f1 <- tabla_aux1 %>% select(f1) %>% pull()
+vector_f2 <- tabla_aux1 %>% select(f2) %>% pull()
+vector_Mi <- tabla_aux1 %>% select(Mi) %>% pull()
+vector_mi <- tabla_aux1 %>% select(mi) %>% pull()
+
+# Inicia proceso para crear muestra
+
+muestra_por_conglomerados <- viviendas_29b %>% filter(0 == 1)
+
+# Fijar semilla
+set.seed(2022)
+for (i in 1:length(vector_clusters)) {
+  muestra_i <- viviendas_29b %>% 
+    # Filtrar registros del cluster correspondiente
+    filter(MUN == vector_clusters[i]) %>% 
+    # Obtener muestra de tamaño correspondiente
+    sample_n(vector_mi[i]) %>% 
+    # Agregar el factor de expansión
+    mutate(factor_total = vector_factores[i],
+           f1 = vector_f1[i],
+           f2 = vector_f2[i],
+           # Agregar los valores del total de elementos y el número de elementos en la muestra
+           Mi = vector_Mi[i],
+           mi = vector_mi[i])
+  
+# Hacer un append a la tabla muestra
+muestra_por_conglomerados <- bind_rows(muestra_por_conglomerados, muestra_i)
+}
+
+
+```
+
+**participación alumnos**. Plantear los pasos para crear una muestra por conglomerados en 2 etapas usando SAS.
+
+```{r}
+glimpse(muestra_por_conglomerados)
+```
+
+
+Saquemos algunos conteos para ver la información en la muestra. Se observan unos problemas de calidad en la variable total de cuartos. De acuerdo con el diccionario de datos del cuestionario, los 99s corresponden a la categoría no especificado. 
+
+```{r}
+muestra_por_conglomerados %>% group_by(MUN) %>% summarise(n = n(), max_pers = max(NUM_PERSONAS), max_cuartos = max(TOTAL_CUARTOS))
+```
+
+
+ Hacer la estimación para el total de personas
+ 
+```{r}
+# De manera directa 
+estimacion_total_personas <-  muestra_por_conglomerados %>%  summarise(estimacion_total_personas = sum(factor_total*NUM_PERSONAS)) %>% pull()
+estimacion_total_personas
+```
+ 
+ 
+```{r}
+# Estimación para cada cluster
+muestra_por_conglomerados %>% group_by(MUN) %>% summarise(total_personas = sum(f2*NUM_PERSONAS))
+
+# sumar el total por cluster y multiplicar por el factor de expansión de los clusters
+
+muestra_por_conglomerados %>% group_by(MUN) %>% summarise(total_personas = sum(f2*NUM_PERSONAS)) %>% summarise(total = (N/n)*sum(total_personas))
+```
+ 
+ 
+ 
+ Estimación de la varianza
+ 
+ 
+ **varianza entre clusters**
+ 
+```{r}
+
+tabla_aux_sb <- muestra_por_conglomerados %>% 
+                group_by(MUN) %>% 
+                summarise(yi_hat = sum(f2*NUM_PERSONAS))
+tabla_aux_sb
+
+```
+ 
+
+```{r}
+# Calculamos la varianza de las estimaciones del total para los clusters
+s2b <- tabla_aux_sb %>% summarise(var_yi = var(yi_hat)) %>% pull()
+
+componente_s2b <-  (N**2)*(1-n/N)*(s2b/n)
+componente_s2b
+```
+ 
+
+ 
+ **varianza dentro de los clusters**
+
+```{r}
+tabla_aux_sw <- muestra_por_conglomerados %>% 
+                group_by(MUN) %>% 
+                summarise(s2wi = var(NUM_PERSONAS), Mi = mean(Mi), mi = mean(mi))  %>% 
+                mutate(sumando = (Mi**2)*(1-mi/Mi)*(s2wi/mi))
+
+tabla_aux_sw
+```
+
+```{r}
+componente_s2wi <- tabla_aux_sw %>% summarise(estimador_varianza = (N/n)*sum(sumando)) %>% pull()
+componente_s2wi 
+```
+
+
+**varialza total**
+
+```{r}
+varianza_total <- componente_s2b + componente_s2wi
+varianza_total 
+```
+
+**participación de los componentes en la varialza total**
+
+```{r}
+print(100*(componente_s2b/varianza_total))
+print(100*(componente_s2wi/varianza_total))
+```
+
+
+
+**Intervalo de confianza**
+
+Definir la confianza
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+z
+```
+
+Los límites del intervalo son
+```{r}
+ee <- sqrt(varianza_total)
+print(ee)
+
+```
+
+```{r}
+limite_inferior <- estimacion_total_personas - z*ee
+limite_superior <- estimacion_total_personas + z*ee
+c(limite_inferior,limite_superior)
+```
+
+
+Longitud del intervalo
+```{r}
+limite_superior - limite_inferior
+```
+
+
+**Ejercicio**. Modificar los valores de n y k (número de conglomerados seleccionados y tamaño de muestra total respectivamente).
+
+* n = 1, 10, 15, 35, 50 y 60
+* k = 10000, 25000, 50000, 70000, 85000 y 100000
+
+
+**participación alumnos**. Considerando que los recursos son limitados y muchas veces no es factible poder realizar un censo; tomando como punto de referencia la estimación anterior, ¿qué ven más favorable, aumentar el número de conglomerados y disminuir el número de muestra o disminuir el número de conglomerados y aumentar el tamaño de muestra?.
+
+---
+
+**Estimación usando librería survey**
+
+cargar librería
+```{r}
+library(survey)
+```
+
+
+Definir diseño
+```{r}
+disenio_conglomerados <-svydesign(id=~MUN, strata = NULL, weights=~factor_total,data=muestra_por_conglomerados)
+```
+
+Estimación
+```{r}
+estimacion_conglomerados <- svytotal(~NUM_PERSONAS,disenio_conglomerados)
+estimacion_conglomerados
+```
+
+Intervalo de Confianza
+```{r}
+confint(estimacion_conglomerados,level=0.90)
+```
+
+
+```{r}
+confint(estimacion_conglomerados,level=0.95)
+```
+
+
+

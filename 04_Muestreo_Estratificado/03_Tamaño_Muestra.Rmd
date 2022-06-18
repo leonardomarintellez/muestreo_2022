@@ -1,0 +1,240 @@
+---
+title: "Tamaño de Muestra"
+author: "LMT"
+date: "marzo de 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Tamaño de muestra
+
+
+### Distribución de la muestra e los Estratos
+
+¿Cómo se debe repartir la muestra $n$ entre los $L$ estratos?. Iniciemos con la opción más sencilla.
+
+1. **Distribución Proporcional**. Se considera que tanto los costos como las varianzas son constantes en todos los estratos.
+
+$$n_h = n \frac{N_h}{N} = nW_h$$
+
+Es decir, la muestra de cada estrato corresponde a la proporción del número de elementos muestrales del estrato respecto al total de elementos de la población.
+
+
+**Ejercicio**.  Veamos el enfoque de nosotros construir una muestra estratificada. 
+
+
+Utilizaremos los datos de [precios de casas](https://www.kaggle.com/c/house-prices-advanced-regression-techniques).
+
+Asumir n determinada e igual a 100, extraer una muestra estratificada proporcional considerando muestreo aleatorio simple dentro de cada estrato. La variable que usaremos para estratificar es MSZoning.
+
+Obtener/Responder lo siguiente:
+
+* La muestra estratificada
+* ¿Cuál es su factor de expansión para cada estrato?
+* Realizar estimación del precio promedio y el error estándar bajo muestreo aleatorio simple
+* Realizar estimación del precio promedio y el error estándar bajo muestreo estratificado
+
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+
+suppressMessages(library(survey))
+```
+
+
+
+```{r}
+precios <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/HousePrices/HousePrices.csv")
+          
+```
+
+```{r}
+precios %>% summarise(parametro = mean(SalePrice))
+```
+
+
+¿cuántos elementos tenemos en cada estrato?
+
+```{r}
+precios %>% group_by(MSZoning) %>% 
+  summarise(Nh = n(), promedio_precio = mean(SalePrice))
+```
+De acuerdo con la descripción de campos las categorías son:
+
+```{r}
+#MSZoning: Identifies the general zoning classification of the sale.
+		
+#       A	Agriculture
+#       C	Commercial
+#       FV	Floating Village Residential
+#       I	Industrial
+#       RH	Residential High Density
+#       RL	Residential Low Density
+#       RP	Residential Low Density Park 
+#       RM	Residential Medium Density
+```
+
+
+Crear vector de estratos y tamaños de muestra por estrato
+```{r}
+n <- 100
+tabla_auxiliar <- precios %>% group_by(MSZoning) %>% 
+    summarise(Nh = n()) %>% 
+    mutate(nh = round(n*(Nh/sum(Nh))),
+           factorh = Nh/nh)
+
+print(tabla_auxiliar)
+
+vector_estratos <- tabla_auxiliar %>% select(MSZoning) %>% pull()
+vector_nh <- tabla_auxiliar %>% select(nh) %>% pull()
+vector_fh <- tabla_auxiliar %>% select(factorh) %>% pull()
+```
+
+
+crear un for para hacer muestreo aleatorio simple dentro de cada estrato, o bien, podrían utilizar alguna librería que haga muestras estratificadas.
+
+```{r}
+#Incicializar la muestra vacia
+muestra_estratificada <- precios %>% filter(0 == 1)
+k <- length(vector_estratos)
+
+# Fijar semilla
+set.seed(202110)
+for (i in 1:k) {
+  muestra_i <- precios %>% 
+    # Filtrar registros de estrato correspondiente
+    filter(MSZoning == vector_estratos[i]) %>% 
+    # Obtener muestra de tamaño correspondiente
+    sample_n(vector_nh[i]) %>% 
+    # Agregar el factor de expansión
+    mutate(fh = vector_fh[i])
+  
+# Hacer un append a la tabla muestra_estratificada
+muestra_estratificada <- bind_rows(muestra_estratificada, muestra_i)
+}
+
+```
+
+
+Revisar cuantos elementos por estrato fueron seleccionados en la muestra
+
+```{r}
+muestra_estratificada %>% group_by(MSZoning) %>% 
+  summarise(nh = n(), promedio_precio = mean(SalePrice))
+```
+
+**Estimación MAS**
+
+
+Definir diseño
+```{r}
+disenio_mas <-svydesign(id=~1, weights=~1,data=muestra_estratificada)
+```
+
+Estimación
+```{r}
+estimacion_mas <- svymean(~SalePrice,disenio_mas)
+estimacion_mas
+```
+
+Intervalo de Confianza
+```{r}
+confint(estimacion_mas,level=0.95)
+```
+
+
+**Estimación Muestreo Estratificado**
+
+Notar que tenemos 1 estrato con 1 sola observación. Para estos casos la librería survey por default arroja error, para forzar al usuario a tomar una acción. En nuestro caso será especificarle que ese estrato no contribuya a la varianza. Para mayor detalle de las opciones se puede consultar la sección correspondiente en la página del paquete survey. [lonely psu](http://r-survey.r-forge.r-project.org/survey/exmample-lonely.html)
+
+```{r}
+options(survey.lonely.psu = "certainty")
+```
+
+
+Definir diseño
+```{r}
+disenio_estratificado <-svydesign(id=~1, strata = ~MSZoning, weights=~fh,data=muestra_estratificada)
+```
+
+Estimación
+```{r}
+estimacion_estratificada <- svymean(~SalePrice,disenio_estratificado)
+estimacion_estratificada
+```
+
+Intervalo de Confianza
+```{r}
+confint(estimacion_estratificada,level=0.95)
+```
+
+
+
+
+Como vimos debemos repartir la muestra disponible en los estratos. Para evitar problemas con la estimación de varianza se necesitan al menos 2 elementos por estrato.
+
+Otros 2 métodos menos utilizados son distribución óptima y método de Neyman que es un caso particular del óptimo cuando los costos son fijos. El método de Neyman asignará más muestra a los estratos donde más se requiera (donde haya más variabilidad). Aunque en con el método de distribución proporcional desperdiciamos muestra en estratos con poca variabilidad, es el más utilizado por su simplicidad.
+
+**2. Distribución óptima**
+
+Se hace uso de una función de costos. Estos costos están asociados a los temas operativos.
+
+$$C = c_0 + \Sigma n_h c_h$$
+
+$c_0$ es un costo fijo para todos los estratos. Por ejemplo, llevar a los encuestadores al lugar geografico del estrato.
+$c_h$ es el costo variable en cada estrato. puede ser el costo que tiene realizar 1 encuesta.
+
+Con esto, vemos que se requiere resolver un problema de optimización. Minimizar la varianza total del estimador sujeta a un costo total $C$.
+
+La solución para la distrubución optima está dada por
+
+
+![n óptima](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/n_dist_optima.png)
+
+**3. Distribución de Neyman**
+
+Cuando los costos son constantes en todos los estratos, entonces el tamaño de muestra para cada estrato es
+
+
+![n Neyman](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/n_dist_neyman.png)
+
+**participación alumnos**. ¿consideran adecuado usar la distribución proporcional en la práctica?. 
+
+
+
+### Tamaño de muestra
+
+**Para la media**
+
+Recordemos la idea de querer un intervalo de cierta longitud fijando un margen de error (ó precisión)
+
+
+![tamaño de muestra](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/n_m_est1.png)
+
+
+**Para el Total**
+
+![tamaño de muestra](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/n_m_est2.png)
+
+
+A continuación se muestra el detalle de como se llega al tamaño de muestra para la media en muestreo estratificado
+
+
+![n](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/dem_tam_n1.png)
+
+![n](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/dem_tam_n2.png)
+
+![n](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/dem_tam_n3.png)

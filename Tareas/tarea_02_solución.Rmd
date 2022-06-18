@@ -1,0 +1,607 @@
+---
+title: "Tarea 02. Muestreo Estratificado"
+author: "LMT"
+date: "abril de 2022"
+output: html_document
+---
+
+**Fecha de entrega**
+
+Fecha límite de entrega: miercoles 4 de mayo de 2022 a las 11:59 pm.
+
+Enviar solución al Classroom de la clase.
+
+
+Los datos para la tarea se encuentran en la carpeta compartida en drive correspondiente a [datos](https://drive.google.com/drive/folders/1jlAoKUdLXeywxdNxXlLms9Bg_Vp7G98e?usp=sharing).
+
+### Ejercicio 1
+
+Los datos a utilizar para este ejercicio serán los del conteo rápido de 2006. 
+
+**¿Qué es el Conteo Rápido?**
+
+El Conteo Rápido es un procedimiento estadístico para estimar las tendencias de los resultados finales de una elección. Se selecciona una muestra aleatoria de todas las casillas instaladas el día de la Jornada Electoral, a través de un proceso matemático que se realiza con diferentes métodos de estimación y es aprobado previamente por la autoridad electoral.
+
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(readr)
+```
+
+Breve descripción de los datos
+
+* El diseño utilizado en muestreo estratificado. 
+* Se seleccionó una muestra de 7,200 casillas repartida en 300 estratos.
+* La tabla muestra_2006.csv contiene el identificador de casilla, identificador de la entidad federativa, el número de votos que recibió cada partido o coalición, el total de votos registrados en la casilla y el estrato. Nota. La columna otros contine el número de votos nulos y votos de candidatos no registrados.
+* la tabla estratos.csv contiene el número total de casillas en el estrato (columna Nh) y el número de casillas que se seleccionaron en la muestra (nh)
+
+
+Leer los datos
+
+```{r}
+muestra_2006 <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/CONTEO_RAPIDO_2006/muestra_2006.csv")
+glimpse(muestra_2006)
+```
+
+
+```{r}
+estratos <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/CONTEO_RAPIDO_2006/estratos.csv")
+glimpse(estratos)
+```
+
+Unir la información de las tablas
+
+```{r}
+datos_elecciones <-  left_join(muestra_2006,estratos, by = c("estrato")) %>% 
+                      mutate(fh = Nh/nh, # se creó la variable factor de expansión de cada estrato
+                             fpc = nh/Nh)  %>% 
+                      arrange(estrato, casilla_id)
+
+glimpse(datos_elecciones)
+
+```
+
+**Ejercicio**. La información con la que cuentan ya es una muestra, deben realizar las siguientes estimaciones. 
+
+Para cada partido obtener:
+
+* Estimación del total de votos.
+* Error estándar.
+* Intervalo de confianza al 90%.
+
+Mostrar los resultados en una tabla ordenados de forma descendiente por la columna de estimación. 
+
+Adicionalmente expresar textualmente sus resultados. Ejemplo: "El total de votos para el partido x es de xxx,xxx votos. El verdadero parámetro se encuentra entre xxx,xxx y xxx,xxx, con un 90% de confianza." o "Se tiene un 90% de confianza de que el total de votos del partido x se encuentra entre xxx,xxx y xxx,xxx."
+
+
+Nota, si requieren hacer copy-paste de código más de 3 veces consideren la opción de crear una función. 
+
+---
+
+**Solución**
+
+Hagamos la estimación para 1 partido. Después encapsularemos el código en una función.
+
+Recordemos que el estimador del total para muestreo estratificado es
+
+![estimador_total](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_005.png)
+
+
+
+calculamos el total por estrato primero
+
+```{r}
+estimacion_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(fh*pri_pvem), S2h = var(pri_pvem),
+                        #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos.                         #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+```
+
+Sumamos el valor de cada estrato para obtenerla estimación del total general.
+
+```{r}
+estimador_total <- estimacion_x_estrato %>% summarise(total_est = sum(yh)) %>%  pull()
+estimador_total 
+```
+
+
+La varianza estimada del estimador está dada por 
+
+![estimador_varianza](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_007.png)
+
+
+```{r}
+# La suma de las varianzas de cada estrato
+estimador_varianza <- estimacion_x_estrato %>% 
+                      mutate(expresion = (Nh**2)*(1-nh/Nh)*(S2h/nh)) %>% 
+                      summarise(var_est = sum(expresion)) %>% pull()
+
+estimador_varianza 
+```
+
+Los límites del intervalo de confianza son
+
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+error_estandar <- sqrt(estimador_varianza)
+```
+
+```{r}
+limite_inferior <- (estimador_total - z*error_estandar) 
+limite_inferior
+```
+
+```{r}
+limite_superior <- (estimador_total + z*error_estandar)  
+limite_superior
+```
+
+Poner los resultados en una tabla
+
+```{r}
+resultado <- data.frame(nombre_partido = "pri_pvem") %>% 
+            mutate(estimacion = estimador_total,
+                   ee = error_estandar,
+                   lim_inf = limite_inferior,
+                   lim_sup = limite_superior)
+resultado
+```
+
+
+**Todos los pasos anteriores los encapsularemos en una función**
+
+Función para la estimación de votos totales. Los parámetros a usar son partido y confianza 
+```{r}
+## Parámetros de la función
+  ## partido: nombre de la variable que analizaremos. (sin comillas) 
+  ## confianza: valor para elintervalo de confianza debe ser un valor entre cero y uno 
+
+estimacion_del_total <- function(partido, confianza) {
+
+# Notar que después de esta parte, para hacer referencia a la variable partido se hace uso del doble signo de exclamación. Para mayor referencia pueden encontrar documentación sobre el tema si buscan non standar evaluation.   
+partido <- dplyr::enquo(partido)
+nombre <- datos_elecciones %>% slice(1) %>% select(!!partido) %>% names()
+
+# Estimación del Total de votos  
+estimacion_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(fh*!!partido), S2h = var(!!partido), #Aquí se llamó a los parametros
+                        #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos.                         #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+
+
+estimador_total <- estimacion_x_estrato %>% summarise(total_est = sum(yh)) %>%  pull()
+# estimador_total 
+
+#Estimador de la varianza
+
+estimador_varianza <- estimacion_x_estrato %>% 
+                      mutate(expresion = (Nh**2)*(1-nh/Nh)*(S2h/nh)) %>% 
+                      summarise(var_est = sum(expresion)) %>% pull()
+
+# estimador_varianza 
+
+
+# Intervalo de confianza
+alpha <- 1 - confianza
+z <- qnorm(1-alpha/2)
+error_estandar <- sqrt(estimador_varianza)
+
+limite_inferior <- (estimador_total - z*error_estandar)
+limite_superior <- (estimador_total + z*error_estandar) 
+
+# Poner los resultados en una tabla
+
+resultado <- data.frame(nombre_partido = nombre) %>% # Notar que se pasa el nombre obtenido en los pasos iniciales de la funcion
+            mutate(estimacion = estimador_total,
+                   ee = error_estandar,
+                   lim_inf = limite_inferior,
+                   lim_sup = limite_superior)
+
+return(resultado)
+
+}
+
+```
+
+
+**Ejecutar Función**
+
+```{r warning=FALSE , message=FALSE}
+tabla1 <- estimacion_del_total(pri_pvem,0.90)
+tabla2 <- estimacion_del_total(pan,0.90)
+tabla3 <- estimacion_del_total(panal,0.90)
+tabla4 <- estimacion_del_total(prd_pt_conv,0.90)
+tabla5 <- estimacion_del_total(psd,0.90)
+tabla6 <- estimacion_del_total(otros,0.90)
+```
+
+Hacer un append de la tabla, ordear por número de votos
+
+```{r}
+tabla_estimaciones <- bind_rows(tabla1, tabla2, tabla3, tabla4, tabla5, tabla6) %>% 
+                      arrange(desc(estimacion)) 
+
+tabla_estimaciones
+```
+
+---
+
+### Ejercicio 2
+
+Los datos a utilizar para este ejercicio corresponden a canciones de spotify entre 2000 y 2020. Considerar esta base como su marco muestral. 
+
+Breve descripción de algunas variables de los datos.
+
+**númericas**:
+
+* acousticness: The relative metric of the track being acoustic, (Ranges from 0 to 1).
+* danceability: The relative measurement of the track being danceable, (Ranges from 0 to 1).
+* duration_ms: The length of the track in milliseconds (ms), (Integer typically ranging from 200k to 300k).
+* duration_minutes: The length of the track in minutes.
+* energy: The energy of the track, (Ranges from 0 to 1).
+* instrumentalness:, The relative ratio of the track being instrumental, (Ranges from 0 to 1) valence: The positiveness of the track, (Ranges from 0 to 1).
+* liveness: The relative duration of the track sounding as a live performance, (Ranges from 0 to 1).
+* loudness: Relative loudness of the track in decibel (dB), (Float typically ranging from -60 to 0). 
+* popularity: The popularity of the song lately, default country = US, (Ranges from 0 to 100).
+* tempo:The tempo of the track in Beat Per Minute (BPM), (Float typically ranging from 50 to 150)    
+* speechiness: The relative length of the track containing any kind of human voice, (Ranges from 0 to 1).
+* year: The release year of track, (Ranges from 2000 to 2020)
+    
+    
+**categoricas**
+
+* id, The primary identifier for the track, generated by Spotify.
+* key: The primary key of the track encoded as integers in between 0 and 11 (starting on C as 0, C# as 1 and so on…).
+* artists: The list of artists credited for production of the track
+* release_date: Date of release mostly in yyyy-mm-dd format, however precision of date may vary
+*mode: The binary value representing whether the track starts with a major (1) chord progression or a minor (0).
+* name: The title of the track.
+* explicit: The binary value whether the track contains explicit content or not, (0 = No explicit content, 1 = Explicit content).
+
+---
+
+Leer los datos
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+suppressMessages(library(arrow))
+```
+
+
+```{r}
+spotify <- arrow::read_feather("/home/leonardo/Documentos/Acatlan/Datos/spotify/spotify_artistas.feather")
+glimpse(spotify)
+```
+
+Generar una muestra estratificada por la variable artistas. Utilizar una muestra de 300 canciones. Incluir en la muestra al menos 1 registro por artista.
+
+**ejercicio**. Calcular:
+
+* a) La estimación de la duración del tiempo promedio en minutos de las canciones.
+* b) El intervalo de confianza correspondiente al 95%.
+* c) Utilizando la estimación del inciso a) ¿Cuántas canciones necesitaria una playlist para un viaje de 3 hrs?.
+
+`En provincia le llaman roadtrip a un viaje de 3 hrs, en la cdmx le llaman tengo junta en Santa Fe.`
+
+(opcional). Hagan uso de la variabilidad obtenida en la pregunta anterior para generar una gráfica del tamaño de muestra vs precisión (margen de error). ¿Qué margen de error utilizarían? ¿Qué tamaño de muestra necesitan para la precisión elegida?.
+
+---
+
+**Solución**
+
+Primero creamos una muestra de tamaño 300. Usaremos asignación proporcional para cada estrato (artistas).
+
+$$n_h = n \frac{N_h}{N} = nW_h$$
+Creamos una tabla auxiliar para saber cuanta muestra debemos asignar a cada estrato
+```{r}
+n <- 300
+
+# Haremos estratificaciónpor la variable artistas,
+# Notar que para esta tabla auxiliar no necesitamos todas las variables 
+tabla_auxiliar <- spotify %>% 
+    select(id,artists) %>% 
+    group_by(artists) %>% 
+    summarise(Nh = n()) %>% 
+    mutate(nh = round(n*(Nh/sum(Nh))),
+           factorh = Nh/nh)
+
+# creamos vectores auxiliales 
+vector_estratos <- tabla_auxiliar %>% select(artists) %>% pull()
+vector_Nh <- tabla_auxiliar %>% select(Nh) %>% pull()
+vector_nh <- tabla_auxiliar %>% select(nh) %>% pull()
+vector_fh <- tabla_auxiliar %>% select(factorh) %>% pull()
+
+print(tabla_auxiliar)
+```
+
+¿Hay alguno de sus grupos de interés?
+
+
+Validar cuánto suma la columna nh
+```{r}
+tabla_auxiliar %>% summarise(n = sum(nh))
+```
+
+Se pasa por 2, para fines prácticos lo dejaremos así.
+
+Validar que ningun registro tenga valor de nh < 1
+```{r}
+tabla_auxiliar %>% filter(nh < 1)
+```
+
+Checar si hay estratos con 1 observación, para dichos casos la varianza del estrato debemos asignarle un cero.
+
+```{r}
+tabla_auxiliar %>% filter(nh == 1)
+```
+
+No hubo ningun caso 
+
+Crear un for para hacer muestreo aleatorio simple dentro de cada estrato.
+
+```{r}
+#Incicializar la muestra vacia
+muestra_estratificada <- spotify %>% filter(0 == 1)
+k <- length(vector_estratos)
+
+# Fijar semilla
+set.seed(202110)
+for (i in 1:k) {
+  muestra_i <- spotify %>% 
+    # Filtrar registros de estrato correspondiente
+    filter(artists == vector_estratos[i]) %>% 
+    # Obtener muestra de tamaño correspondiente
+    sample_n(vector_nh[i]) %>% 
+    # Agregar el factor de expansión
+    mutate(fh = vector_fh[i]) %>% 
+    # Incluir las variables Nh y nh, las ocuparemos después
+    mutate(Nh = vector_Nh[i],
+           nh = vector_nh[i])
+  
+# Hacer un append a la tabla muestra_estratificada
+muestra_estratificada <- bind_rows(muestra_estratificada, muestra_i)
+}
+
+```
+
+```{r}
+muestra_estratificada %>% select(id,artists, duration_minutes, name, fh, Nh, nh) %>% glimpse()
+```
+
+
+**crear estimación del promedio**
+
+La estimación para el promedio es 
+
+![estimador](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_008.png)
+
+```{r}
+estimacion_x_estrato <- muestra_estratificada %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(artists) %>% 
+                        # Calcular el promedio por estrato
+                        summarise(yh = mean(duration_minutes), S2h = var(duration_minutes),
+                        #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos. 
+                        #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+```
+
+
+```{r}
+head(estimacion_x_estrato)
+```
+
+La suma de los pesos (Wh) debe sumar 1
+```{r}
+estimacion_x_estrato %>% summarise(suma_pesos = sum(wh))
+```
+
+Realizamos una suma ponderada para obtener el estimador del promedio general 
+
+```{r}
+estimador_promedio <- estimacion_x_estrato %>% summarise(estimador = sum(wh*yh)) %>%  pull()
+estimador_promedio 
+```
+
+El promedio por canción es de 3 minutos 52 segundos
+
+
+**estimación de la varianza del estimador**
+
+
+![varianza](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_009.png)
+
+
+```{r}
+# La suma de las varianzas de cada estrato
+estimador_varianza <- estimacion_x_estrato %>% 
+                      mutate(expresion = (wh**2)*(1-nh/Nh)*(S2h/nh)) %>% 
+                      summarise(var_est = sum(expresion)) %>% pull()
+
+estimador_varianza 
+```
+
+**Intervalo de confianza**
+
+Los límites del intervalo de confianza son
+
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+error_estandar <- sqrt(estimador_varianza)
+```
+
+```{r}
+limite_inferior <- (estimador_promedio - z*error_estandar) 
+limite_inferior
+```
+
+```{r}
+limite_superior <- (estimador_promedio + z*error_estandar)  
+limite_superior
+```
+
+Poner los resultados en una tabla
+
+```{r}
+resultado <- data.frame(datos = "spotify") %>% 
+            mutate(estimacion = estimador_promedio,
+                   ee = error_estandar,
+                   lim_inf = limite_inferior,
+                   lim_sup = limite_superior)
+resultado
+```
+
+La precisión de nuestro estimador es (obtenida a partir del intervalo)
+```{r}
+(limite_superior - limite_inferior)/2
+```
+
+Una playlist de 3 hrs (180 minutos) necesita  `r 180/estimador_promedio` canciones.
+
+
+**opcional**. Crear una gráfica del tamaño de muestra para distintos niveles de precisión.
+
+
+La fórmula para el tamaño de muestra para la media bajo muestreo estratificado.
+
+
+$$n = \frac{N \Sigma_h N_h S^2_h}{N^2 \frac{\delta^2}{z^2_{1-\frac{\alpha}{2}}} + \Sigma_h N_h S^2_h}$$
+
+
+Ya tenemos varios calculos hechos en la tabla estimación por estrato
+
+
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+d <- 0.0855
+
+N <- estimacion_x_estrato %>% summarise(N = sum(Nh)) %>% select(N) %>% pull()
+
+componentes_n <- estimacion_x_estrato %>% summarise(numerador = N*sum(Nh*(S2h)), 
+                                         denominador = (N**2)*((d**2/z**2))+ sum(Nh*(S2h))) %>% 
+                mutate(n = numerador / denominador)
+  
+n <- componentes_n %>% select(n) %>% pull()
+print(componentes_n)
+```
+
+con ello corroboramos el tamaño de muestra aproximado de 300. 
+
+Iterar sobre el valor de $\delta$ para ver los distintos valores de $n$
+
+```{r}
+vector_precision <- seq(from = 0.001, to = 1, by = 0.001)
+vector_n <- vector(length = length(vector_precision))
+  
+alpha <- 0.10
+z <- qnorm(1 -alpha/2)
+N <- estimacion_x_estrato %>% summarise(N = sum(Nh)) %>% select(N) %>% pull()
+
+for (i in 1:length(vector_precision)) {
+  
+  vector_n[i] <- estimacion_x_estrato %>% 
+                  summarise(numerador = N*sum(Nh*(S2h)), 
+                            denominador = (N**2)*((vector_precision[i]**2/z**2))+ sum(Nh*(S2h))) %>% 
+                  mutate(n = numerador / denominador) %>% 
+                  select(n) %>% pull()
+  
+}
+ 
+tabla_precisiones <- data.frame(n = vector_n, precision = vector_precision)
+head(tabla_precisiones)
+
+```
+
+
+```{r}
+ggplot(data = tabla_precisiones) +
+  geom_point(mapping = aes(x = precision, y = n))
+```
+
+Si quisieramos un intervalo de longitud de 30 segundos ( 0.5 = 30 / 60 ), necesitamos que la precisión sea 
+
+```{r}
+# precisión = (longitud intervalo) / 2
+tabla_precisiones %>% filter(precision == 0.25)
+```
+
+En segundos, ¿cuál es la longitud del intervalo que obtuvimos previamente?
+
+¿Qué tamaño de muestra se necesita para tener un intervalo de longitud de 5 segundos?
+```{r}
+longitud = 5/60
+delta = longitud /2
+print(paste("La precisión para un intervalo de longitud de 5 segundos debe ser ", delta))
+
+```
+
+
+```{r}
+tabla_precisiones %>% filter(precision >= delta - 0.001, precision <= delta + 0.001)
+```
+
+Aproximadamente una muestra de 1,100 elementos.
+
+
+---
+
+### Ejercicio 3
+
+Los datos a utilizar para este ejercicio corresponden población sin derechohabiencia del IMSS o ISSSTE.
+
+En un estudio para estimar el total de la población a nivel nacional que no tiene servicios de salud como asalariado (IMSS o ISSSTE), se tomó una muestra de 246 municipios, utilizando el grado de nivel socioeconómico como estrato de muestreo. Se supone que el nivel de marginación se relaciona con la proporción de personas con derechohabiencia, por lo que la estratificación debe ayudar a reducir la varianza del estimador.
+
+Los datos muestrales se presentan en la siguiente tabla:
+
+
+![tabla](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/tabla_derechohabiencia.png)
+
+La tabla se encuentra dentro de la subcarpeta derechohabiencia en la carpeta de datos de la clase.
+
+**ejercicio**.
+
+* Estimar total de personas sin derechohabiencia a nivel nacional usando la información estratificada que aparece en la tabla. 
+* Construir un intervalo de confianza al 95%. 
+* Se observa que hay estratos con mayor variabilidad que otros. Realizar una asignación por el método de Neyman para cada estrato. Considerar que el tamaño total de la muestra es 250.
+
+
+**Solución**. Ver archivo en excel en carpeta compartida donde se encuentran los datos.
+
+
+
+
+
+
+
+
+

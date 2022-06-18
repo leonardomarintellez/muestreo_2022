@@ -1,0 +1,793 @@
+---
+title: "04 Totales y Proporciones"
+author: "LMT"
+date: "marzo de 2022"
+output: html_document
+---
+
+
+
+# Estimadores, Intervalos de Confianza y Tamaños de Muestra para Totales y Proporciones. 
+
+## Totales
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_1.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_2.png)
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_3.png)
+
+Usaremos datos del Censo 2010. [Censo 2010](https://www.inegi.org.mx/programas/ccpv/2010/#Microdatos).
+
+
+**Descripción de los datos**
+
+Para el levantamiento de la muestra censal 2010 se diseñó un cuestionario ampliado, con el que fueron censadas alrededor de 2.9 millones de viviendas en el país, seleccionadas con criterios probabilísticos.
+
+Consta de 2 cuestionarios: básico y ampliado. 
+
+**Objetivos**. Por medio de la muestra censal se estiman tasas, promedios y proporciones.
+
+**Diseño**. El diseño de la muestra censal 2010 es estratificado por conglomerados y se realizó en una sola etapa de selección, es decir, se seleccionan áreas geográficas completas, ya sean manzanas o localidades. Dentro de estas áreas se aplica el cuestionario ampliado a todas las viviendas particulares habitadas
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+library(stringr)
+
+library(haven)
+```
+
+
+Leer datos de viviendas
+
+```{r}
+viviendas_15a <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_15_sas/viviendas_15a.sas7bdat", NULL)
+glimpse(viviendas_15a)
+```
+
+¿Cuántos municipios hay en el Estado de México?
+
+```{r}
+viviendas_15a %>% summarise(num_mun = n_distinct(MUN))
+```
+
+Si nuestros datos tuvieran información de más de 1 estado, ¿podríamos hacer ejecutar la línea de código anterior para saber el número de municipios?
+
+```{r}
+viviendas_15a %>% mutate(LLAVE = paste(ENT,MUN,sep = "_")) %>% summarise(num_mun = n_distinct(LLAVE))
+```
+
+Número de viviendas en la muestra
+
+```{r}
+viviendas_15a %>% summarise( registros = n())
+```
+
+Número de registros de viviendas por municipio
+```{r}
+# ¿Por qué incluir la variable ENT en el group by?. Es una buena práctica para no perder el identificador
+viviendas_15a %>% group_by(ENT, NOM_ENT, MUN, NOM_MUN) %>%  summarise( registros = n())
+```
+
+
+
+**Estimación del total de Viviendas en el Estado de México**
+
+¿Cómo estimamos el total de viviendas a partir de la muestra que nos proporcionaron?
+Hasta ahora no conocemos el tamaño de la población $N$. 
+
+
+```{r}
+viviendas_15a %>% summarise(num_viviendas = sum(FACTOR))
+```
+
+
+La información contiene la variable de número de personas por Viviendas. Con cifras del Censo de 2010, ¿cuántas personas vivían en el Estado de México?.
+
+```{r}
+viviendas_15a %>% mutate(num_personas = parse_number(NUMPERS)) %>% 
+  summarise( num_personas = sum(FACTOR*num_personas))
+```
+
+Estimación del número de viviendas y personas por municipio
+
+```{r}
+tabla_viviendas <- viviendas_15a %>% 
+  mutate(num_personas = parse_number(NUMPERS)) %>% 
+  group_by(ENT, NOM_ENT, MUN, NOM_MUN) %>%  
+  summarise( num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas)) %>% 
+  ungroup()
+
+tabla_viviendas
+```
+
+
+Revisar algún minucipio de interés. Municiío donde está la FES Acatlán.
+
+```{r}
+tabla_viviendas %>% filter(MUN %in% c("013","057"))
+```
+
+
+**Presentar estimaciones de forma gráfica**
+
+Utilizaremos los datos de vivienda de la **cdmx**
+
+
+```{r}
+viviendas_09a <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_09_sas/viviendas_09_a.sas7bdat", NULL)
+glimpse(viviendas_09a)
+```
+
+Estimación de Viviendas y Personas
+
+```{r}
+viviendas_09a %>% 
+  mutate(num_personas = parse_number(NUMPERS)) %>% 
+           summarise(num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas))
+```
+
+¿Por qué no es la misma estimación reportada en la página del INEGI?
+
+Veamos los tipos de Vivienda. revisar los distintos tipos de categoría. Consultar catálogo para saber el descriptivo de las categorías
+
+```{r}
+viviendas_09a %>% group_by(CLAVIVP) %>% summarise(conteo = n(), factor = sum(FACTOR))
+```
+
+Estimación de Viviendas y Personas (considerando las reglas de negocio)
+
+```{r}
+viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS)) %>% 
+           summarise(num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas))
+```
+
+
+```{r}
+viviendas_x_municipio <- viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS), unos = 1) %>% 
+  group_by(ENT, NOM_ENT, MUN, NOM_MUN) %>%  
+  summarise( registros = n(), num_viviendas = sum(FACTOR), num_personas = sum(FACTOR*num_personas)) %>% 
+  ungroup()
+
+viviendas_x_municipio
+```
+
+Grafica de barras
+```{r}
+ggplot(data = viviendas_x_municipio) +
+geom_col(mapping = aes(x = reorder(NOM_MUN,num_personas, desc = TRUE), y = num_personas)) +
+coord_flip()
+```
+
+Misma gráfica para ver el impacto de los factores de expansión
+
+```{r}
+ggplot(data = viviendas_x_municipio) +
+geom_col(mapping = aes(x = reorder(NOM_MUN,registros, desc = TRUE), y = registros)) +
+coord_flip()
+```
+
+
+---
+
+Uno de los recursos que pone el INEGI a la disposición de los usuarios son archivos con coordenadas de polígonos. Estos archivos permiten graficar mapas. Iniciaremos con municipios, se puede ver mayor nivel de desglose, entre ellos los llamados AGEB (área geoestadística básica). 
+
+```{r}
+#Cargar librería para graficar mapas
+library(sf)
+```
+
+
+```{r}
+# Leer el dataframe de shapes
+shapes <- st_read("/home/leonardo/Documentos/Acatlan/Datos/shapes/01_32_mun.shp")
+glimpse(shapes)
+```
+
+Unir la info con los shapefiles. Es importante tener colapsada la información a  nivel estado municipio para no duplicar información.
+
+```{r}
+viviendas_shapes <- shapes %>%   
+                    left_join((viviendas_x_municipio %>% mutate(llave = paste(ENT,MUN,sep = ""))), by = c("CVEGEO"="llave"))
+
+glimpse(viviendas_shapes)
+```
+
+
+**Ejercicio**. Revisar el porcentaje de registros que hacen match. ¿Por qué esto es importante?
+
+**Pregunta**. ¿Qué pasa si hubieramos hecho la union de tablas utilizando como tabla izquierda la tabla de viviendas por municipio?
+
+```{r}
+datos_grafica <- viviendas_shapes  %>% 
+                filter(CVE_ENT == '09') %>% 
+                mutate(nombre_etiqueta = ifelse(num_personas < 500000,NOM_MUN,""))
+```
+
+
+```{r}
+datos_grafica %>%
+  ggplot(aes(fill = num_personas)) +
+  geom_sf(colour = "grey75", size = 0.35) +
+  labs(title = "Concentracion personas por municipio",
+       subtitle = "CDMX",
+       caption = "Fuente: Censo 2010") +
+  scale_fill_gradient("Concentración", high = "red", low = "white") +
+  theme_bw() +
+  geom_sf_text(aes(label = nombre_etiqueta))
+
+```
+
+**Ejercicio**. Replicar para Edo Mex y pintar la etiqueta solamente para los top 3 estados con mayor número de personas
+
+
+### Intervalos de Confianza (Totales)
+
+Construiremos un Intervalo de Confianza para el Total de Viviendas de la CMDX bajo Muestreo Aleatorio Simple.
+
+¿Qué pasos debemos seguir?, ¿Qué valores debemos calcular?
+
+```{r}
+viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  mutate(num_personas = parse_number(NUMPERS)) %>% 
+  summarise(n = n(),
+    num_viviendas = sum(FACTOR), var_viv = var(FACTOR), promedio = mean(FACTOR))
+
+```
+
+Asignar valores a variables (Notar que esto se puede automatizar)
+```{r}
+N <- 2440641
+n <- 97749
+var <- 1837.469
+```
+
+La varianza estimada está dada por
+```{r}
+var_est <- (n**2) * (var/n) * (1 - n/N)
+## ee: error estándar
+ee <- sqrt(var_est)
+ee
+```
+
+**importante**. Reflexionar por qué la $n$ al cuadrado es sobre la muestra en la formula para estimar la varianza y no sobre $N$.
+
+Definir la confianza
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+z
+```
+
+Los límites del intervalo son
+```{r}
+limite_inferior <- 2440641 - z*ee
+limite_superior <- 2440641 + z*ee
+c(limite_inferior,limite_superior)
+```
+
+
+Veremos otro ejemplo usando las **tablas de Personas**
+
+```{r}
+personas_09a <- read_sas("/home/leonardo/Documentos/Acatlan/Datos/Censo_2010/MC2010_09_sas/personas_09_a.sas7bdat", NULL)
+glimpse(personas_09a)
+```
+
+
+Estimación del número de Personas 
+
+```{r}
+personas_09a %>% summarise(n = n(), num_personas = sum(FACTOR))
+```
+
+
+
+
+## Proporciones
+
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_4.png)
+
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_5.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_6.png)
+
+
+Notar que el tamaño de muestra para una proporción no depende de $N$.
+
+  
+**Distintos valores de P**
+
+En la práctica se utiliza P tal que maximice el valor de la varianza para tener el mayor tamaño de muestra posible.
+
+```{r}
+vector_p <- seq(from = 0, to = 1, by = 0.01)
+varianza_p <- vector(length = length(vector_p))
+
+
+for (i in 1:length(vector_p)) {
+  
+  varianza_p[i] <- (vector_p[i])*(1- vector_p[i])
+  
+}
+ 
+tabla_p <- data.frame(p = vector_p, v = varianza_p)
+head(tabla_p)
+
+```
+
+
+```{r}
+ggplot(data = tabla_p) +
+  geom_point(mapping = aes(x = p, y = v))
+```
+
+**Tamaño de muestra para proporciones dependiendo de la precisión deseada**
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mas_04_7.png)
+
+ Hagamos un ejemplo Viviendas propias. ¿Qué porcentaje de las viviendas propias tiene la categoría `compra` como forma de adquisción?
+ 
+```{r}
+datos_interes <- viviendas_09a %>% 
+  filter(CLAVIVP %in% c("1","2","3","4","9")) %>% 
+  filter(TENVIV == "1") %>% 
+  # Crear variable indicadora 
+  mutate(indicadora = ifelse(FADQUI == "1",1,0))
+```
+ 
+Nuestro universo es
+```{r}
+datos_interes %>% summarise(n = n(), num_viviendas = sum(FACTOR))
+```
+
+Estos datos coinciden con los tabulados publicados.
+
+
+La estimación es:
+
+```{r}
+datos_interes %>% summarise(n = n(), p = mean(indicadora), suma = sum(FACTOR))
+```
+
+¿Por qué la estimación de los totales sí nos coincide con los tabulados ublicados y la estimación de la proporción no?
+¿Qué estamos haciendo mal, o qué no estamos considerado?
+
+
+### Intervalos de Confianza (proporciones)
+
+Construiremos un Intervalo de Confianza para la proporción de la categoría compra.
+
+Asignar valores a variables (Notar que esto se puede automatizar)
+```{r}
+N <- 1628389
+n <- 64827
+```
+
+La varianza estimada está dada por
+```{r}
+p <- 0.4611196
+var_est <-  ((p*(1-p))/(n-1))*(1 - n/N)
+## ee: error estándar
+ee <- sqrt(var_est)
+ee
+```
+
+Definir la confianza
+```{r}
+alpha <- 0.10
+z <- qnorm(1-alpha/2)
+z
+```
+
+Los límites del intervalo son
+```{r}
+limite_inferior <- p - z*ee
+limite_superior <- p + z*ee
+c(limite_inferior,limite_superior)
+```
+
+¿Qué deficiencias identifican al crear este tipo de intervalos para proporciones?
+
+
+## Ejemplos de Tamaño de muestra
+
+A diferencia de los ejemplos anteriores donde tenemos los datos de la muestra y podemos estimar un valor de $S^{2}$. Para calcular el tamaño de muestra para un nivel de confianza y precisión fijos, necesitamos conocer el valor de $S^{2}$.
+
+* Muestra piloto. Realizar una pequeña muestra con n=50 o n=100 para tener una idea de  $S^{2}$.
+
+* Uso de una distribución hipotética. Dependiendo de nuestro objeto de estudio, en algunos casos se puede asumir cierta distribución sobre nuestra variable de interés, por ejemplo, para una variable normal, el ~95% de los datos están a una distancia de de 2 desviaciones estándar de la media; así, se puede considerar un valor de $S = \frac{rango}{4}$
+
+¿Qué falla le encuentran a la recomendación anterior?. Recordemos que estamos en una situación que tenemos nuestro marco muestral, pero no datos.
+
+* Estudios anteriores o datos disponibles en referencias.Este caso será el más usual en la práctica.
+
+
+**Ejemplo**
+
+De manera ilustrativa, usaremos los datos de uso de [ecobici](https://www.ecobici.cdmx.gob.mx/es/informacion-del-servicio/open-data) del mes de agosto de 2021.
+
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+
+library(readr)
+library(stringr)
+library(lubridate)
+```
+
+
+```{r}
+ecobici <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/ecobici/datos_abiertos_ecobici_202108.csv")
+glimpse(ecobici)
+```
+
+Queremos saber el tiempo promedio de los viajes en ecobici
+
+Hacemos labor de campo y entrevistamos a x personas en las cicloestaciones cuando dejan su bici y preguntamos cuanto duró su viaje.
+
+Primero. ¿Qué sesgos puede haber si sólo entrevisto a una zona?.
+
+Segundo. ¿A cuántas personas debo entrevistar para tener un intervalo de confianza del 95%?.
+
+
+
+Crear variable del tiempo de uso
+```{r}
+tiempos_ecobici <- ecobici %>% 
+          rename(Fecha_Arribo = `Fecha Arribo`) %>%
+          mutate(Fecha_Retiro = gsub("/","-",Fecha_Retiro),
+                 Fecha_Arribo = gsub("/","-",Fecha_Arribo),
+                tiempo_inicio = dmy_hms(paste(Fecha_Retiro,Hora_Retiro, sep = " ")),
+                tiempo_fin = dmy_hms(paste(Fecha_Arribo,Hora_Arribo, sep = " ")),
+                duracion_viaje = tiempo_fin - tiempo_inicio) %>% 
+                # Filtrar casos donde la bici no se devuelve en ese día
+                filter(duracion_viaje < (60*24)) %>% 
+                filter(duracion_viaje < 90)
+
+glimpse(tiempos_ecobici)
+```
+
+_Con tu tarjeta ECOBICI, toma una bici de cualquier CE y déjala en la más cercana a tu destino. Podrás utilizarla en trayectos ilimitados de 45 minutos cada uno durante el periodo contratado. El horario de servicio es de 05:00 a 00:30 horas de lunes a domingo._
+
+Los valores reales de nuestra población son 
+
+```{r}
+tiempos_ecobici %>% summarise(suma = sum(duracion_viaje), promedio = mean(duracion_viaje), sd = sd(duracion_viaje), min = min(duracion_viaje), max = max(duracion_viaje))
+```
+
+
+```{r}
+ggplot(tiempos_ecobici) +
+  geom_histogram(mapping = aes(x = duracion_viaje))
+```
+
+
+Sin conocimiento previo, saquemos una muestra y calculemos un intervalo de confianza
+
+```{r}
+(N <- dim(tiempos_ecobici)[1])
+```
+
+
+```{r}
+set.seed(12341)
+muestra_1 <- tiempos_ecobici %>% 
+              sample_n(100) %>% 
+              mutate(factor_exp = (N/100)) %>% 
+              select(tiempo_inicio, tiempo_fin, duracion_viaje, factor_exp)
+
+glimpse(muestra_1)
+```
+
+```{r}
+muestra_1 %>% summarise(suma = sum(duracion_viaje), promedio = mean(duracion_viaje), sd = sd(duracion_viaje))
+```
+
+El intervalo al 95% de confianza  está dado por
+
+```{r}
+alpha = 0.05
+valor = 1 - (alpha/2)
+z <- qnorm(p = 0.975, mean = 0, sd = 1)
+print(z)
+```
+
+
+```{r}
+# Error Estándar
+ee <- 12.35239 / sqrt(100)
+
+limite_inferior <- 15.85333 - z*ee
+limite_superior <- 15.85333 + z*ee
+c(limite_inferior,limite_superior)
+
+```
+
+
+Ahora calculemos el tamaño de muestra y con ese tamaño de muestra, obtengamos la muestra y su intervalo de confianza
+
+
+```{r}
+# Fijar parámetros (no confundir la terminología de parámetros de una función con el contexto de parámetros en muestreo)
+alpha <- 0.05
+z <- qnorm(1 -alpha/2)
+
+delta <- 2 # para nuestro ejemplo de bicis usaremos 2 minutos
+S2 <- 12.35239 **2
+
+```
+
+```{r}
+# Función para el tamaño de muestar
+N_finita <- function(N,S2,z,delta){
+  
+  n0 <- (S2*z**2)/(delta**2) 
+  return(n0 / (1 + n0/N))
+}
+
+N_infinita <- function(S2,z,delta){
+  
+  n0 <- (S2*z**2)/(delta**2) 
+  return(n0)
+}
+
+```
+
+
+
+El tamaño de mestra que obtenemos es
+
+```{r}
+n <- N_infinita(S2, z, delta)
+n
+```
+
+Por tanto, para la precisión y confianza fijados obtenemos que la muestra debe ser de al menos `r floor(n+1)`.  
+
+
+Si quisieramos ser más estrictos en la precisión con un valor de 1 min, la muestra aumenta a 
+
+```{r}
+N_infinita(S2, z, 1)
+```
+
+**Participación alumnos** ¿Qué precisión se requiere para que la muestra sea de tamaño n=100?. Alternativa a solución, usar función buscar objetivo en excel.
+
+**Ejercicio** Considera el factor de ajuste por población finita y calcula nuevamente el intervalo de confianza anterior sin considerar el factor de ajuste por población finita $1 - \frac{n}{N}$.
+
+
+La muestra con el valor de $n$ obtenido es
+
+
+```{r}
+set.seed(12342)
+muestra_2 <- tiempos_ecobici %>% 
+              sample_n(147) %>% 
+              mutate(factor_exp = (N/147)) %>% 
+              select(tiempo_inicio, tiempo_fin, duracion_viaje, factor_exp)
+
+glimpse(muestra_2)
+```
+
+
+
+```{r}
+muestra_2 %>% summarise(suma = sum(duracion_viaje), promedio = mean(duracion_viaje), sd = sd(duracion_viaje))
+```
+
+El intervalo al 95% de confianza  está dado por
+
+```{r}
+alpha = 0.05
+valor = 1 - (alpha/2)
+z <- qnorm(p = 0.975, mean = 0, sd = 1)
+print(z)
+```
+
+
+```{r}
+# Error Estándar
+ee <- 11.07418	 / sqrt(147)
+ee
+```
+
+
+```{r}
+limite_inferior <- 14.4932 - z*ee
+limite_superior <- 14.4932 + z*ee
+c(limite_inferior,limite_superior)
+
+```
+
+
+Como podemos ver, aumentar el tamaño de muestra hizo que nuestro intervalo disminuyera su longitud.
+
+
+---
+
+Corroboremos los resultados obtenidos usando una librería de R diseñada para muestreo
+
+Cargamos librería
+```{r}
+suppressMessages(library(survey))
+```
+
+
+Definir diseño de MAS
+```{r}
+disenio_mas <-svydesign(id=~1, weights=~1,data=muestra_2)
+```
+
+Estimación
+```{r}
+promedio <-  svymean(~duracion_viaje,disenio_mas)
+promedio
+```
+
+Coeficiente de variación
+```{r}
+cv(promedio)
+```
+
+
+Intervalos de Confianza
+```{r}
+confint(promedio,level=0.95)
+```
+
+---
+
+**Tamaño de muestra para proporciones**
+
+Deseamos hacer una estimación para conocer la propoción de usuarios que son mujeres, con un intervalo de confianza del 95% y una precisión de 5 puntos porcentuales. 
+
+**Importante**. Notar que los tamaños de muestra están en función de la precisión deseada ($\delta$) y la escala de ésta varia conforme al problema. 
+
+Recordemos que la fórmula para el tamaño de muestra de una proporción es
+
+$$\frac{Z^{2} \cdot P(1-P)}{\delta^{2}}$$
+
+
+Considerando un intervalo con una confianza de 95, a veces se llega a simplificar la expresión anterior a 
+
+$$\frac{2^{2} \cdot 0.5(1-0.5)}{\delta^{2}} = \frac{1}{\delta^{2}} $$
+
+
+Se redondea el cuantil $z$ de 1.96 a 2 y se toma $P=0.5$ para maximizar la varianza y considerar el mayor número de muestra para los distintos valores de $P$. 
+
+
+
+
+```{r}
+set.seed(12343)
+muestra_p <- tiempos_ecobici %>% 
+              filter(!is.na(Genero_Usuario)) %>% 
+              sample_n(400) %>%  
+              mutate(indicadora = ifelse(Genero_Usuario == "F",1,0)) %>% 
+              select(tiempo_inicio, tiempo_fin, duracion_viaje, Genero_Usuario, indicadora) 
+
+glimpse(muestra_p)
+```
+
+
+
+```{r}
+muestra_p %>% summarise(p = mean(indicadora, na.rm = TRUE), sd = sd(indicadora, na.rm = TRUE))
+```
+
+El intervalo al 95% de confianza  está dado por
+
+```{r}
+alpha = 0.05
+valor = 1 - (alpha/2)
+z <- qnorm(p = 0.975, mean = 0, sd = 1)
+print(z)
+```
+
+Utilizando la fórmula vista arriba tenemos que el error estándar de nuestro estimador es
+
+$$\hat{V}(\hat{p}) = \frac{\hat{p}(1-\hat{p})}{n-1}$$
+
+
+```{r}
+# Error Estándar
+p_est <- 0.3
+ee <- sqrt(p_est * (1 - p_est))/ sqrt(400-1)
+ee
+```
+
+
+
+```{r}
+limite_inferior <- 0.3 - z*ee
+limite_superior <- 0.3 + z*ee
+c(limite_inferior,limite_superior)
+
+```
+
+
+---
+
+Corroboremos los resultados obtenidos usando una librería de R diseñada para muestreo
+
+Definir diseño de MAS
+```{r}
+disenio_mas <-svydesign(id=~1, weights=~1,data=muestra_p)
+```
+
+Estimación
+```{r}
+proporcion <-  svymean(~indicadora,disenio_mas)
+proporcion
+```
+
+Coeficiente de variación
+```{r}
+cv(proporcion)
+```
+
+
+Intervalos de Confianza
+```{r}
+confint(proporcion,level=0.95)
+```
+
+
+---
+ Sólo para validar, veamos los valores poblacionales
+ 
+```{r}
+tiempos_ecobici %>% 
+              filter(!is.na(Genero_Usuario)) %>% 
+              mutate(indicadora = ifelse(Genero_Usuario == "F",1,0)) %>% 
+              summarise( p = mean(indicadora), sd = sd(indicadora))
+```
+ 
+Para la muestra elegida, el intervalo sí contiene el parámetro poblacional.
+
+**preguntas**
+
+* ¿Qué pasaría si para una proproción fijara una presición $\delta$ de 1?
+* Piensen un caso donde hacer muestreo aleatorio simple para proporciones pueda dar resultados no esperados en las estimaciones. 
+
+```{recho=FALSE}
+# Un ejemplo a la pregunta anterior es un intervalo de confianza que exceda el rango (0,1)
+```
+
+
+
+
+
+
+
+
+
+
+
+

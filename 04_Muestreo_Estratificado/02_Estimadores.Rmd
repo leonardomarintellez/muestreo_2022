@@ -1,0 +1,585 @@
+---
+title: "02 Estimadores"
+author: "LMT"
+date: "marzo de 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Estimadores
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_005.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_006.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_007.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_008.png)
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/me_009.png)
+
+## Ejemplos
+
+Para nuestro primer ejemplo usaremos datos del [conteo rápido](https://www.ine.mx/voto-y-elecciones/conteos-rapidos-ine/) de las elecciones de 2006.
+
+**¿Qué es el Conteo Rápido?**
+
+El Conteo Rápido es un procedimiento estadístico para estimar las tendencias de los resultados finales de una elección. Se selecciona una muestra aleatoria de todas las casillas instaladas el día de la Jornada Electoral, a través de un proceso matemático que se realiza con diferentes métodos de estimación y es aprobado previamente por la autoridad electoral.
+
+**Marco Geografico Muestral**
+
+A la fecha de elaboración de estas notas, el marco muestral está compuesto por 7,636 casillas, distribuidas en 481 estratos y 300 distritos electorales. Lo anterior para una mejor organización electoral. [marco geografico electoral](https://cartografia.ife.org.mx/). 
+
+Para mayor detalle consultar el [Proceso Federal Electoral 2006](https://portalanterior.ine.mx/documentos/proceso_2005-2006/proceso_resultados.html)
+
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+```
+
+Breve descripción de los datos:
+
+* El diseño utilizado en muestreo estratificado. 
+* Se seleccionó una muestra de 7,200 casillas repartida en 300 estratos.
+* La tabla muestra_2006.csv contiene el identificador de casilla, identificador de la entidad federativa, el número de votos que recibió cada partido o coalición, el total de votos registrados en la casilla y el estrato. Nota. La columna otros contine el número de votos nulos y votos de candidatos no registrados.
+* la tabla estratos.csv contiene el número total de casillas en el estrato (columna Nh) y el número de casillas que se seleccionaron en la muestra (nh)
+
+
+Leer los datos
+
+```{r}
+muestra_2006 <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/CONTEO_RAPIDO_2006/muestra_2006.csv")
+glimpse(muestra_2006)
+```
+
+
+```{r}
+estratos <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/CONTEO_RAPIDO_2006/estratos.csv")
+glimpse(estratos)
+```
+
+Unir la información de las tablas
+
+```{r}
+datos_elecciones <-  left_join(muestra_2006,estratos, by = c("estrato")) %>% 
+                      mutate(fh = Nh/nh, # se creó la variable factor de expansión de cada estrato
+                             fpc = nh/Nh)  %>% 
+                      arrange(estrato, casilla_id)
+
+glimpse(datos_elecciones)
+
+```
+
+Recuerden validar la correcta unión de las tablas.
+
+Número de casillas (en la muestra) y estratos 
+```{r}
+muestra_2006 %>% summarise(num_casillas = n_distinct(casilla_id), num_estratos = n_distinct(estrato))
+```
+
+Número de casillas totales
+```{r}
+estratos %>% summarise(num_casillas_muestra = sum(nh), num_casillas_totales = sum(Nh))
+```
+
+Número de muestra
+```{r}
+datos_elecciones %>% summarise(conteo = n(), suma_factores = sum(fh), expansion_votantes = sum(fh*total))
+```
+
+
+**Estimación** del total para el pri
+
+Lo haremos por pasos para ejemplificar. primero colapsemos la información a  nivel estrato
+
+```{r}
+estimacion_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(fh*pri_pvem), S2h = var(pri_pvem),
+                                  #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos. 
+                                  #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+
+glimpse(estimacion_x_estrato)
+
+```
+
+
+```{r}
+estimacion_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(fh*pri_pvem), S2h = var(pri_pvem),
+                                  #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos. 
+                                  #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+
+head(estimacion_x_estrato)
+```
+
+
+
+Corroborar que los pesos sumen 1
+
+```{r}
+estimacion_x_estrato %>% summarise(sum(wh))
+```
+
+La estimación total de votos para el pri es
+
+```{r}
+estimacion_x_estrato %>% summarise(total_est = sum(yh))
+```
+
+Veamos resultados en esta fuente no oficial [resultados elecciones](https://es.wikipedia.org/wiki/Elecciones_federales_de_M%C3%A9xico_de_2006)
+
+La varianza estimada del estimador está dada por 
+
+```{r}
+# La suma de las varianzas de cada estrato
+estimacion_x_estrato %>% 
+                    mutate(expresion = (Nh**2)*(1-nh/Nh)*(S2h/nh)) %>% 
+                    summarise(var_est = sum(expresion))
+```
+
+---
+
+Hagámos una estimación para otro partido
+
+Igual lo haremos por pasos. Colapsamos la información a  nivel estrato
+
+```{r}
+estimacion_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(fh*pan), S2h = var(pan),
+                                  #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos. 
+                                  #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh), nh = mean(nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate(wh = Nh / sum(Nh))
+
+glimpse(estimacion_x_estrato)
+
+```
+
+La estimación total de votos para el pan es
+
+```{r}
+estimacion_x_estrato %>% summarise(total_est = sum(yh))
+```
+
+
+La varianza estimada del estimador está dada por 
+
+```{r}
+# La suma de las varianzas de cada estrato
+estimacion_x_estrato %>% 
+                    mutate(expresion = (Nh**2)*(1-nh/Nh)*(S2h/nh)) %>% 
+                    summarise(var_est = sum(expresion))
+```
+```{r}
+#Error Estándar del estimador
+sqrt(5739832740)
+```
+
+
+Ahora sin considerar el ajuste de corrección por población finta
+
+```{r}
+estimacion_x_estrato %>% 
+                    mutate(expresion = (Nh**2)*(S2h/nh)) %>% 
+                    summarise(var_est = sum(expresion))
+```
+
+```{r}
+#ee
+sqrt(6074215972)
+```
+
+
+
+**Ejercicio**. Hagan la estimación para cada partido y ordenen los resultados en una tabla. Ordenen la tabla de manera descendente de acuerdo al valor de sus estimaciones. Nota, si requieren hacer copy-paste de código más de 3 veces consideren la opción de crear una función.
+
+
+Utilicemos la librería survey para obtener resultados y comparar con lo calculado previamente
+
+
+```{r}
+glimpse(datos_elecciones)
+```
+
+Cargar librería
+```{r}
+suppressMessages(library(survey))
+```
+
+Definir diseño de muestreo estratificado
+```{r}
+disenio_elecciones <-svydesign(id=~1, strata = ~estrato, weights=~fh,data=datos_elecciones)
+```
+
+Estimación. Agreguemos un parámetro adicional a la función
+```{r}
+total_votos <-  svytotal(~pan,disenio_elecciones, deff = TRUE)
+total_votos
+```
+
+Intervalos de Confianza
+```{r}
+confint(total_votos,level=0.95)
+```
+
+**Ejercicio** Revisar como se puede incluir el ajuste de correción por población finita en la función svytotal.
+
+```{r}
+# fpc : finite population correction
+disenio_elecciones2 <-svydesign(id=~1, strata = ~estrato, weights=~fh, fpc = ~fpc, data=datos_elecciones)
+total <-  svytotal(~pan,disenio_elecciones2, deff = TRUE)
+print(total)
+print(confint(total,level=0.95))
+```
+
+
+Ajustar el código para considerar muestreo aleatorio simple y comparar resulatdos respecto al diseño estratificado.
+```{r}
+datos_mas <- datos_elecciones %>% mutate(factor_mas = 130777/7200)
+disenio_mas <-svydesign(id=~1, weights=~factor_mas,data=datos_mas)
+total_mas <-  svytotal(~pan,disenio_mas)
+print(total_mas)
+
+print(confint(total_mas,level=0.95))
+
+```
+
+
+DEFF 
+
+```{r}
+(77937**2)/(112206**2)
+```
+
+
+
+### Efecto de Diseño
+
+¿Qué es el **deff**? 
+
+En 1965 Kish en su libro _Survey Sampling_  propuso la medida efecto de diseño (Design effect), denotado por 
+
+$$Deff(\hat{\theta}) = \frac{V_{D}(\hat{\theta})}{V_{MAS}(\hat{\theta})}$$
+
+Usualmente se usa el muestreo aleatorio simple como punto de referencia.
+
+¿Para qué se usa?
+
+1. Para comparar eficiencia de diversos diseños de muestreo. 
+
+Se busca que deff < 1
+
+Normalmente, el deff < 1 si se usa un diseño de estratificación y deff > 1 si se usa un diseño por conglomedados.
+
+En la practica cuando se usan ambos (estratos y conglomedaros) no se sabe que efecto dominará. 
+
+
+
+2. Auxiliar en el tamaño de muestra
+
+Notar que si deff > 1 para el tamaño de muestra obtenido para un nivel de confianza y una precisión fijos. Entonces 
+
+$n = n_{0} \cdot Deff$ nos indica en cuanto tenemos que aumentar la muestra para disminuir la varianza del estimador y a tener a lo más la misma varianza que se obtendría con muestreo aleatorio simple.
+
+
+
+## Estimadores de razón (ratio)
+
+Con los ejemplos anteriores obtuvimos estimaciones para el total de votos, no obstante, no es como suelen reportarse las estimaciones.
+
+Los estimadores de una razón no no son exactamente insesgados, pero en muestras grandes el sesgo es practicamente despreciable. El sesgo es aproximadamente proporcional a $\frac{1}{n}$ y el error estándar es proporcional a $\frac{1}{\sqrt{n}}$. Estos estimadores son aproximadamente insesgados.
+
+Dificultades:
+
+* No es insesgado
+* $\theta$ no es lineal
+
+Preguntas. ¿Qué opciones hay para los intervalos de confianza cuando el estimador no es insesgado?.
+¿Existen intervalos no simétricos?.
+
+
+Para muestreo aleatorio simple el estimador de razón está dado por 
+
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/ratio1.png)
+
+Sin considerar el factor de expansión
+```{r}
+razon_mas <- datos_elecciones %>% summarise(razon = sum(pan)/sum(total)) %>% pull()
+razon_mas
+```
+
+Considerando el factor de expansión
+```{r}
+razon_mas <- datos_elecciones %>% summarise(razon = sum(pan*fh)/sum(total*fh)) %>% pull()
+razon_mas
+```
+
+Nos da lo mismo que usando la librería survey, pero ¿qué está mal en el paso anterior?.
+Recordemos que bajo MAS, cada elemento tiene la misma probabilidad de selección
+
+
+```{r}
+varianza_razon_mas <- function(y,x,N){
+  
+  n <- length(y)
+  #print(n)
+  R <- sum(y)/sum(x)
+  x_barra <- mean(x)
+  semi_S2 <- sum((y-R*x)**2)/(n-1)
+  
+  var <- (1-n/N)*(1/n)*(1/(x_barra)**2)*semi_S2
+  return(var)
+  
+}
+  
+```
+
+
+```{r}
+N <- 130777
+votos_partido <- datos_elecciones %>% select(pan) %>% pull()
+votos_total <- datos_elecciones %>% select(total) %>% pull()
+
+varianza_razon_mas(votos_partido,votos_total,N)
+```
+
+```{r}
+ee_ratio_mas <- sqrt(varianza_razon_mas(votos_partido,votos_total,N))
+ee_ratio_mas
+```
+
+
+Mientras que en **muestreo estratificado** es
+
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/ratio2.png)
+
+
+**participación alumnos** ¿Dentro de cada estrato, el factor de expansión para cada individuo de mi muestra puede variar o siemre es el mismo? (considerar que hasta el momento sólo hemos mencionado muestreo aleatorio simple dentro de los estratos).
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/ratio3.png)
+
+El estimador de razón combinado se usa cuando se tienen muchos estratos y/o los tamaños de muestra en cada estrato son pequeños, mientras que el estimador de razón se ocupa cuando se tienen pocos estratos y/o los tamaños de muestra son grandes.
+
+Dado que en el estimador de razón separado las varianzas se suman, es conveniente usarlo cuando los tamaños de muestra en cada estrato sean grandes.
+
+La parte del cálculo de varianza para el estimador combinado la dejaremos pendiente para cuando veamos Bootstrap.
+
+Con lo anterior. ¿Ustedes qué estimador ocuparían para hacer las estimaciones? ¿separado o combinado?
+
+Hagamos el cálculo del combinado
+
+```{r}
+#colapsamos la info por estratato. Incluir el factor de expansión
+aggregate_x_estrato <- datos_elecciones %>% group_by(estrato) %>% 
+                  summarise(yh = sum(fh*pan), xh = sum(fh*total))
+
+head(aggregate_x_estrato)
+```
+
+```{r}
+# calcular estimador. sumar para todos los estratos
+aggregate_x_estrato %>% summarise( ratio = sum(yh)/sum(xh))
+```
+
+
+
+```{r}
+# Calcular el ratio para cada estrato y después hacer la suma ponderada
+ratio_x_estrato <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(estrato) %>% 
+                        # Calcular el total por estrato
+                        summarise(yh = sum(pan), xh = sum(total), rh= yh/xh,
+                                  #Las variables Nh y nh las ocuparemos más adelante por eso también las incluimos. 
+                                  #De estas variables necesitamos el dato por estrato así que por eso pedimos la media,
+                                  Nh = mean(Nh)) %>% 
+                        # Aprovechar este paso para calcular el peso de los estratos
+                        mutate( N = sum(Nh), wh = Nh / N)
+
+head(ratio_x_estrato)
+
+```
+
+```{r}
+# Corroborar que los pesos sumen 1
+ratio_x_estrato %>% summarise( w = sum(wh))
+```
+
+```{r}
+#Suma ponderada
+ratio_x_estrato %>% summarise( ratio = sum(wh*rh))
+```
+
+
+
+**Estimación con librería survey**
+
+Definir diseño de muestreo estratificado
+```{r}
+disenio_elecciones <-svydesign(id=~1, strata = ~estrato, weights=~fh,data=datos_elecciones)
+```
+
+
+
+Estimación. Revisar la documentación de la función para saber si se ocupa un estimador de razón separado o uno combinado.
+
+```{r}
+ratio_pan <-  svyratio(~pan,~total,disenio_elecciones)
+ratio_pan
+```
+
+```{r}
+names(ratio_pan)
+ratio_pan$ratio
+sqrt(ratio_pan$var)
+```
+
+Intervalos de Confianza
+```{r}
+confint(ratio_pan,level=0.95)
+```
+
+
+### Dominancia por Entidad Federativa
+
+Para finalizar esta sección de estimación de elecciones, haremos un mapa de dominancia por entidad federativa, es decir, visualizaremos que partido domina cada Estado.
+
+La siguiente solución pertenece a Arana Monroy María Guadalupe elaborada en [google data studio](https://datastudio.google.com/reporting/0B5FF6JBKbNJxOWItcWo2SVVVeGc/page/DjD) 
+
+![notas](/home/leonardo/Documentos/Acatlan/muestreo_2022/imágenes/mapa_elecciones_Arana.png)
+
+Utilizando lo visto hasta ahora en clase, una opción de solución quedaría de la siguiente manera
+
+```{r}
+## Función que calcula la estimación del total de votos para cada Entidad por partido
+
+## Parámetros de la función
+  ## partido: nombre de la variable que analizaremos. (sin comillas)
+
+estimacion_opcion_nse <- function(partido) {
+
+# Notar que después de esta parte, para hacer referencia a la variable partido se hace uso del doble signo de exclamación    
+partido <- dplyr::enquo(partido)
+nombre <- datos_elecciones %>% slice(1) %>% select(!!partido) %>% names()
+  
+tabla <- datos_elecciones %>% 
+                        # Agrupar por estrato para que lo que hagamos se haga por bloques (en este caso por estrato)
+                        group_by(edo_id, estrato) %>% 
+                        # Calcular el total por entidad y estrato 
+                        summarise(yh = sum(fh*!!partido))
+
+resultado <- tabla%>%   
+              summarise(estimacion = sum(yh)) %>% 
+              mutate(nombre_partido = nombre) %>% 
+              select(edo_id, nombre_partido, estimacion)
+
+return(resultado)
+
+}
+
+```
+
+
+**Ejecutar Función**
+
+```{r warning=FALSE , message=FALSE}
+tabla1 <- estimacion_opcion_nse(pri_pvem)
+tabla2 <- estimacion_opcion_nse(pan)
+tabla3 <- estimacion_opcion_nse(panal)
+tabla4 <- estimacion_opcion_nse(prd_pt_conv)
+tabla5 <- estimacion_opcion_nse(psd)
+tabla6 <- estimacion_opcion_nse(otros)
+```
+
+Hacer un append de la tabla, ordear y conservar el registro con mayor número de votos
+
+```{r}
+tabla_estimaciones <- bind_rows(tabla1, tabla2, tabla3, tabla4, tabla5, tabla6) %>% 
+                      arrange(edo_id,desc(estimacion)) %>% 
+                      group_by(edo_id) %>% 
+                      top_n(1)
+tabla_estimaciones
+```
+
+
+Leer los datos que contienen los shapes para graficar
+
+
+
+```{r}
+#Cargar librería para graficar mapas
+library(sf)
+```
+
+
+```{r}
+# Leer el dataframe de shapes
+shapes <- st_read("/home/leonardo/Documentos/Acatlan/Datos/shapes/01_32_mun.shp") %>% 
+          # mcrear la variable edo_id númerica  a partir de la variable CVEGEO para unir más fácil con la info que ya se tiene 
+          mutate(edo_id = parse_number(substr(CVEGEO,1,2)))
+glimpse(shapes)
+```
+
+
+Unir la info con los shapefiles. 
+
+```{r}
+estimaciones_shapes <- shapes %>%   
+                    left_join((tabla_estimaciones), by = c("edo_id")) %>% 
+                    mutate(color_partido = ifelse(nombre_partido == "pan",1,0))
+                    
+
+glimpse(estimaciones_shapes)
+```
+
+
+
+```{r}
+estimaciones_shapes %>%
+  ggplot(aes(fill = factor(color_partido, labels = c("PRD","PAN")))) +
+  geom_sf(colour = "grey75", size = 0.05) +
+  labs(title = "Elecciones Federales 2006",
+       subtitle = "Partido con más votos por estado") +
+  scale_fill_manual("Partidos",
+                    values = c("yellow", "blue")) +
+  theme_bw() 
+```
+
+Notar que quizá era más conveniente descargar los shape files a nivel Estado en lugar de usar los shape files a nivel Municipio.
+
+
+
+
+
+

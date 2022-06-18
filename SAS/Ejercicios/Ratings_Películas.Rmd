@@ -1,0 +1,183 @@
+---
+title: "Resumen de información de ratings de películas"
+author: "LMT"
+date: "mayo de 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+El objetivo del ejercicio es que resulevan ejemplos prácticos de manipulación de datos en SAS. 
+Es muy común que al trabajar con datos una parte importante del tiempo se centre en preprocesamiento de los mismos.
+
+El siguiente ejercicio está resuelto en R. Utilícenlo de referencia. 
+Suban los datos a su sesión de SAS y resuelvan cada uno de los puntos utilizando SAS.
+
+---
+
+Utilizaremos datos de ratings de películas.
+
+Breve descripción de los datos:
+
+El conjunto de datos consiste de:
+
+- 100,000 ratings (1-5) de 943 usuarios sobre 1,682 películas.
+
+- Cada usuario calificó al menos 20 pelícuas. 
+
+
+Para mayor detalle consultar la fuente de los datos, [Movielens](https://grouplens.org/datasets/movielens/).
+
+
+**Ejercicio**. Calcular:
+
+- Número de usuarios y número de películas.
+- Las 3 películas con mejor promedio y las 3 películas con peor promedio.
+- La película con el mayor número de calificaciones y cuantás son.
+- El usuario que ha calificado un mayor número de películas y cuántas ha calificado.
+- El número promedio de evaluaciones por película.
+- Calcular el número de películas por año.
+
+Noten que para resolver un par de puntos deben unir la información de las tablas _data_ e _item_
+
+
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+library(stringr)
+
+library(readxl)
+library(haven)
+```
+
+
+Leer los datos
+```{r}
+columnas_datos <- c('user_id','item_id','rating','timestamp')
+datos <- read_delim("/home/leonardo/Documentos/Acatlan/Datos/MovieLens/ml-100k/u.data", delim = "\t", col_names = columnas_datos)
+glimpse(datos)
+```
+
+
+```{r}
+columnas_movies <- c('item_id', 'title', 'release_date', 'video_release_date', 'imdb_url','unknown', 'Action', 'Adventure','Animation', 'Children\'s', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Fantasy','Film-Noir', 'Horror', 'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western')
+
+movies <- read_delim("/home/leonardo/Documentos/Acatlan/Datos/MovieLens/ml-100k/u.item", delim = "|", col_names = columnas_movies)
+glimpse(movies)
+```
+
+Sólo ocuparemos 2 variables de la tabla movies. La usaremos como catálogo para saber el nombre de la película. 
+```{r}
+ctmovies <- movies %>% select('item_id','title')
+head(ctmovies)
+```
+
+Unir las tablas
+
+```{r}
+movie_ratings <- left_join(datos,ctmovies, by = c("item_id"))
+```
+
+**solución**
+
+Número de usuarios y películas
+```{r}
+movie_ratings %>% 
+  summarise(numero_usuarios = n_distinct(user_id), número_películas = n_distinct(item_id))
+```
+
+
+Top películas con mejor calificación
+```{r}
+movie_ratings %>% group_by(item_id, title) %>% 
+                  summarise(numero_calificaciones = n(), calificacion_promedio = mean(rating)) %>% 
+                  arrange(desc(calificacion_promedio)) %>% 
+                  head(20)
+```
+¿notan algo relevante en el resultado?
+
+
+Películas con peor calificación
+
+```{r}
+movie_ratings %>% group_by(item_id, title) %>% 
+                  summarise(numero_calificaciones = n(), calificacion_promedio = mean(rating)) %>% 
+                  arrange((calificacion_promedio)) %>% 
+                  head(20)
+```
+
+
+Película con el mayor número de calificaciones
+
+```{r}
+movie_ratings %>% group_by(item_id, title) %>% 
+                  summarise(numero_calificaciones = n(), calificacion_promedio = mean(rating)) %>% 
+                  arrange(desc(numero_calificaciones)) %>% 
+                  head(20)
+```
+
+
+
+Usuario que ha calificado mayor número de películas
+
+```{r}
+movie_ratings %>% group_by(user_id) %>% 
+                  summarise(numero_calificaciones = n(), calificacion_promedio = mean(rating)) %>% 
+                  arrange(desc(numero_calificaciones)) %>% 
+                  head(20)
+```
+
+
+
+Número promedio de evaluaciones por película
+
+```{r}
+movie_ratings %>% group_by(item_id, title) %>% 
+                  summarise(numero_calificaciones = n()) %>% 
+                  ungroup() %>% 
+                  summarise(promedio = mean(numero_calificaciones))
+```
+
+
+Se puede extraer el año a partir de la variable title. Hay distintas formas de resolverlo. Usaremos **expresiones regulares**. A continuación 2 distintas formas.
+```{r}
+movie_ratings %>% mutate(anio = str_extract(title, "\\d{4}")) %>% 
+head()                         
+                         
+```
+
+```{r}
+# Forma 2.
+#movie_ratings %>% mutate(anio = str_extract(title, "\\d+")) %>% 
+#head()  
+```
+
+Número de películas por año
+```{r}
+movie_ratings %>% 
+  # quitar duplicados
+  group_by(title) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  # crear la variable de año
+  mutate(anio = str_extract(title, "\\d{4}")) %>% 
+  group_by(anio) %>% 
+  summarise(conteo= n())
+```
+¿qué notan de los resultados?
+
+
+**Puntos a discutir**. Las encuestas voluntarias pueden incluir sesgos derivados de las personas unicamente interesadas en contestar.
+

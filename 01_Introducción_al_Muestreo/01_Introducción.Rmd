@@ -1,0 +1,481 @@
+---
+title: "01 Introdución al Muestreo"
+author: "Leonardo Marín Téllez "
+date: "febrero de 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introducción 
+
+¿Dónde se usa el muestreo?
+
+- Encuestas de INEGI (Ingreso-Gasto, Población económicante activa, etc)
+- Estudios de Mercado
+- Control de calidad
+
+Ejemplos particulares son: nivel de escolaridad en una ciudad, nivel de desempleo, la opinión de un producto, elecciones de partidos políticos, etc.
+
+## Objetivo del muestreo
+
+Conocer las características generales de una población. 
+
+¿Qué debe cumplir una buena muestra?. 
+
+Deseamos que sea una muestra representativa, es decir, que la variable de interés presente una distribución semejante a la población.
+
+Lo anterior nos lleva apreguntarnos por un tamaño de muestra 'apropiado'. A veces erroneamente se cree que un tamaño de muestra del 10% de tu población es apropiado.
+
+**participación alumnos**. Pensar un ejemplo donde un tamaño menor al 10% sea representativo y otro ejemplo donde un 10% no sea suficiente.
+
+El tamaño de muestra depende de los siguientes factores:
+
+- La **variabilidad** de lo que queremos estudiar.
+- La **presición** con la que queremos hacer inferencia.
+- El **tamaño** de la población.
+- El **presupuesto** que tengamos.
+
+
+## Definición de Conceptos
+
+* ¿Qué es una población?
+
+Conjunto completo de observaciones que se desea estudiar. La población se define al especificar que elementos son y que características deben tener. Los elementos de la población pueden ser personas, viviendas, escuelas, etc. ejemplo, todas las escuelas primarias de la CDMX.
+
+* Marco de muestreo.
+
+Listado que contiene las unidades de muestreo. Ejemplo, una lista de telefonos de un call center. Muchas veces no es sencillo obtener el marco muestral.
+
+* ¿Qué es una muestra?
+
+Es un subconjunto de la población. Son elementos seleccionados del marco muestral.
+
+
+  
+## Tipos de muestra
+
+  - No probabilistica
+  
+  
+    - A juicio. Se usa el criterio experto del investigador.
+    - Por cuotas. Es realizada por un entrevistador y se les solicita a cada entrevistador cubrr una cuota de encuestas.
+    
+    
+    
+    
+  - Probabilística
+  
+  
+    - Muestreo aleatorio simple
+    - Estratificado
+    - conglomerados
+    
+
+Las muestras no probabilisticas suelen ser útiles en algunas situaciones para dar una idea general, no obstante, se puede incurrir en sesgos y no se puede evaluar la confiabilidad de los resultados.
+
+En el muestreo probabilísico se selecciona a los elementos de la población con probabilidades conocidas y mayores a cero.
+
+¿Por qué son tan populares las muestras probabilísticas? 
+
+Porque permiten calcular:
+
+
+- Estimadores insesgados
+- Errores estándar
+- Intervalos de confianza
+
+
+**participación alumnos**. Comentar ejemplos de malas prácticas que consideres podrían ocurrir en el levantamiento de encuestas.
+
+## Fuentes de error
+
+**Sesgo de selección**
+
+Ocurre cuando alguna parte de la población objetivo no está en en la población muestreada. Una muestra grande no asegura que se tenga sesgo pequeño.
+
+**Sesgo de medición**
+
+Este tipo de sesgo puede darse por:
+
+- Las personas no siempre dicen la verdad (ingresos / uso de drogas). pueden dar respuestas incorrectas sin intención como el parentezco con cierto familiar.
+- Los entrevistadores registran mal las respuestas. 
+- Se puede afectar la precisión de las respuestas al dar un todo específco a una pregunta o la forma de redacción de la misma.
+- Diferencias culturaes. Una palabra puede siignificar cosas disyintas en ciertas regiones.
+
+
+Este tipo de errores puede ser controlado poniendo mayor dedicacción a la construcción del cuestionario y a la capacitación del trabajo de campo. 
+
+**Error muestral**
+
+Contrario a las fuentes anteriores, este error puede ser medido utilizando métodos estadísticos y por lo tanto hay opciones para disminuirlo o controlarlo con el diseño de la muestra.
+
+
+
+## Pasos para realizar una encuesta por muestreo
+
+1. Establecimiento de objetivos
+2. Definición de la población
+3. Marco
+4. Diseño de la muestra
+5. Método de medición
+6. Instrumento de medición
+7. Prueba piloto
+8. Organización de trabajo en campo
+9. Manejo de la información
+10. Análisis de datos
+
+
+## Propiedades deseables de un Estimador
+
+**Parámetro**. Es una cantidad numérica calculada sobre una población. 
+
+**Estimador**. Es una función de la la muestra que no tiene involucrados parámetros desconocidos y se construye para estimar un parámetro de la población. Nota, este valor varia de muestra a muestra.
+
+**Estimación**. Es el valor que toma el estimador una vez observados los valores de la muestra.
+
+**Distribución muestral**. Es la función de distribución de un estimador.
+
+**participación alumnos** Dar 3 ejemplos de funciones de distribución y su uso. Para un repaso de funciones de distribución se puede consultar el libro _Hassets, Stewart. Probability for Risk Management_.
+
+---
+
+**Ejemplo sencillo**. se tienen 6 depantamentos a los cuales se les midió el número de personas en cada departamento. 
+
+```{r echo=FALSE}
+suppressMessages(library(tidyverse))
+library(ggplot2)
+```
+
+
+
+```{r}
+departamentos <- c("departamento1","departamento1","departamento3","departamento4","departamento5","departamento6")
+personas <- c(0,1,2,3,4,5)
+
+tabla <- data.frame(departamentos,personas)
+tabla 
+```
+
+Considerando estos departamentos como nuestra población, el promedio de personas por departamento es
+
+$$\bar{X} = \frac{\sum x_{i}}{n} = \frac{15}{6} = 2.5 $$
+
+
+Ahora, con una muestra de tamaño 2 se desea estimar el promedio. Si se selecciona una muestra aleatoria  de tal manera que cualquier muestra de tamaño 2 tenga la misma probabilidad de ser seleccionada, ¿Cuántas muestra posibles hay?
+
+$${6 \choose 2} = \frac{6!}{2!4!} = 15$$
+
+Podemos calcularlas a mano (lo que sería muy ineficiente a medida que el tamaño de nuestra población crece) o podemos tomar ventaja de las herramientas ya desarrolladas.
+
+La función combn nos permite generar las combinaciones. Por practicidad lo haremos directamente sobre la caraterística, pero notra que también se podría hacer para los individuos y después manipular la tabla previa.
+```{r}
+combinaciones <- combn(personas,2)
+combinaciones
+```
+
+El resultado es una matriz de 2x6, le daremos una estructura de tabla
+
+```{r}
+tabla_combinaciones <- data.frame(t(combinaciones))
+tabla_combinaciones
+```
+
+El procedimiento de selección aleatorio implica que cualquiera de las muestras tiene la misma probabilidad de ser seleccionada, es decir, no se favorece más una muestra sobre las otras. En este caso, cada muestra aleatoria de tamaño 2 tiene porobabilidad $\frac{1}{15}$
+
+**Ejercicio**. Pensar como replicar la tabla anterior en SAS.
+
+Con los valores de cada muestra podemos obtener la distribución muestral del estimador
+
+```{r}
+estimaciones <- tabla_combinaciones %>% mutate(promedio = (X1+X2)/2)
+estimaciones
+```
+
+Ditribución muestral
+```{r}
+total <- dim(estimaciones)[1]
+distribucion_muestral <- estimaciones %>% 
+                          group_by(promedio) %>% 
+                          summarise(frecuencia = n(), frecuencia_relativa = frecuencia / total)
+
+distribucion_muestral
+```
+
+
+Generemos el histograma de la distribución muestral.
+```{r}
+# Extraer la variable promedio y que el objeto sea un vector
+x_barra <- estimaciones %>% select(promedio) %>% pull()
+
+# Graficar de forma sencilla
+ggplot() +
+  geom_histogram(aes(x = x_barra))
+```
+
+
+
+
+La siguiente figura ilustra distintos valores que pueden tomar los estimadores.
+
+![Estimadores](C:/Users/ipab24636/Downloads/GITHUB/muestreo_2022/imágenes/bias_and_variance.png)
+
+Las propiedades deseables para nuestros estimadores son:
+
+- **unbiashed** (insesgado). Esto es, es que el promedio de los valores que puede tomar coincida con el verdadero valor del parámetro, es decir, la esperanza del del estimador sea el parámetro.
+
+$$E(\hat{\theta}) = \theta$$
+
+- **precise** (preciso). Esto es, si la varianza del estimador es pequeña.
+
+$$V(\hat{\theta}) = E[{(\hat{\theta} - E(\hat{\theta}))}^2]$$
+
+- **accurate** (exacto). Esto es, si su error cuadratico medio (MSE por sus siglas en inglés) es pequeño.
+
+$$MSE(\hat{\theta}) = E[{(\hat{\theta} - \theta)}^2]$$
+
+Se puede probar que
+
+$$MSE(\hat{\theta}) = V(\hat{\theta}) + {Sesgo(\hat{\theta})}^2$$
+
+Nota. 
+ $$Sesgo(\hat{\theta}) = E(\hat{\theta}) - \theta$$
+
+
+**observación**
+Estas propiedades no son exclusivas del muestreo, también aplican a modelos predictivos. Dado que nuestras estimaciones pueden tener error de sesgo y varianza,  usualmente se busca minimizar el **mse**.
+
+
+
+![overfitting](C:/Users/ipab24636/Downloads/GITHUB/muestreo_2022/imágenes/overfitting.png)
+
+**Investigar** ¿Qué debe cumplir un generador de número aleatorios para considerarse un buen generador?
+
+
+
+
+## Teorema del Límite Central
+
+Sea $x_{1}, x_{2}, ... , x_{n}$ una muestra aleatoria de una función de dstribución con media $\mu$ y varianza $\sigma^{2}$  y sea $\bar{x} = \frac{\Sigma x_{i}}{n}$ para n suficientemente grande, se tiene que $\bar{x}$ se distribuye : 
+
+$$  N(\mu,\frac{\sigma^2}{n})$$
+
+
+
+Vemos que la varianza se ve afectada por el tamaño $n$. Así, mientras más grande el tamaño de $n$, La varianza será menor.
+
+![TLC1](C:/Users/ipab24636/Downloads/GITHUB/muestreo_2022/imágenes/TLC.png)
+
+Podemos estar interesados en hacer inferencia sobre muchos distintos indicadores de una población, no obstante, historicamente el principal desarrollo de la teoría de muestreo ha sido estimar promedios y totales, es por ello que nos es útil el teorema del límite central.
+
+
+
+**Ejercicio**. Mediante simulación, crear la distribución muestral de la media para ejemplificar el teorema central del límite.
+
+Pasos. 
+
+a) Generar datos de una distribución uniforme. (Graficar para corroborar).
+
+b) obtener k muestras aleatorias de los datos generados en a) (hint, se puede usar la función sample).
+
+c) a cada muestra del paso b) calcular su promedio. 
+
+d) tendremos k promedios, graficar un histograma de esos k promedio.
+
+
+
+**Ejercicio**. Crear una tabla con 100 números aleatorios en SAS.
+
+
+**participación alumnos**
+¿Qué pruebas existen para validar si una distribución es normal?
+
+
+
+
+## Error Estándar
+
+Por cada muestra que tomamos, calculamos 1 estimador usando esa muestra. Consideraremos la estimación como el valor de una variable aleatoria, dicha variable aleatoria tendrá una distribución específica. Es decir, la estimación obtenida es uno de los muchos valores que puede tomar nuestro estimador. 
+
+La variable original $X$ tiene $var(x)$ y nuestro estimador es la variable transformada $\bar{y}$ que es igual a $\Sigma\frac{x_{i}}{n}$.
+Teoricamente, la varianza de nuestro estimador es $var(\bar{y})/n$. por tanto, mientras mayor sea la muestra que tomemos, la varianza de nuestro estimador irá reduciendose.
+
+
+Estimación: valor particular.
+
+Estimador: Una función.
+
+
+¿Qué pasa si n=N? ¿Cuál sería la varianza de nuestro estimador?
+
+  
+**Ejemplo**. Veamos un ejemplo con los datos de ecobici
+
+
+[ecobici](https://www.ecobici.cdmx.gob.mx/es/informacion-del-servicio/open-data) del mes de diciembre de 2021.
+
+
+
+```{r echo = FALSE }
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+
+library(readr)
+library(stringr)
+suppressMessages(library(lubridate))
+```
+
+
+```{r warning=FALSE}
+ecobici <- read_csv("C:/Users/ipab24636/Documents/Acatlan/datos/ecobici/datos_abiertos_ecobici_202112.csv")
+glimpse(ecobici)
+```
+
+```{r}
+tiempos_ecobici <- ecobici %>% 
+          rename(Fecha_Arribo = `Fecha Arribo`) %>%
+          mutate(Fecha_Retiro = gsub("/","-",Fecha_Retiro),
+                 Fecha_Arribo = gsub("/","-",Fecha_Arribo),
+                tiempo_inicio = dmy_hms(paste(Fecha_Retiro,Hora_Retiro, sep = " ")),
+                tiempo_fin = dmy_hms(paste(Fecha_Arribo,Hora_Arribo, sep = " ")),
+                duracion_viaje = tiempo_fin - tiempo_inicio) %>% 
+                # Filtrar casos donde la bici no se devuelve en ese día
+                filter(duracion_viaje < (60*24)) %>% 
+                filter(duracion_viaje < 90)
+
+glimpse(tiempos_ecobici)
+```
+
+
+Así se ve la distribución de la variable duracion de viaje
+```{r}
+ggplot(tiempos_ecobici) +
+  geom_histogram(mapping = aes(x = duracion_viaje))
+```
+
+
+```{r}
+tiempos_ecobici %>% summarise(promedio = mean(duracion_viaje), var =var(duracion_viaje), sd = sd(duracion_viaje))
+```
+
+
+---
+
+Nuestro estimador es el promedio de la duración del viaje, calculemos muchas veces el estimador y veamos como se ve su densidad, ¿a qué distribución se parece?
+
+Lo haremos 5,000 veces para tamaños de muestra de 1000
+
+```{r}
+vector_estimaciones <- vector(length = 5000)
+
+for (i in 1:5000){
+  muestra <- sample_n(tiempos_ecobici,1000)
+  valor_estimacion <- muestra %>% select(duracion_viaje) %>% pull() %>% mean()
+  vector_estimaciones[i] <- valor_estimacion
+  
+  if(i%%1000 == 0) {print(paste("itearación",i, sep = " "))}
+  
+}
+```
+
+
+```{r}
+ggplot() +
+  geom_histogram(mapping = aes(x = vector_estimaciones))
+```
+
+```{r}
+length(vector_estimaciones)
+mean(vector_estimaciones)
+sd(vector_estimaciones)
+```
+
+Recordemos que teoricamente, la desviación estándar de nuestro estimador (error estándar) es igual a $\frac{sd(x)}{sqrt(n)}$
+```{r}
+11.92 / sqrt(1000)
+```
+
+**Ejercicio**. Replicar para distintos tamaños de muestra y graficar el error estándar para observar como va disminuyendo. 
+
+
+
+## (Adicional) Transformaciones
+
+## Transformación z-score
+
+
+Consideremos unos datos que se distribuyen de uniforme. Los datos se encuentran entre cero y uno
+
+```{r}
+# 10,000 datos con distribución uniforme
+set.seed(1234)
+u <- runif(10000)
+
+# visualizar la distribución (histograma)
+hist(u)
+```
+
+Realizamos la transformación z-score
+
+$$z = \frac{x - mean(x)}{sd(x)}$$
+
+Notar que ahora la distribución de los datos no cambia, simplemente cambió su escala. en este caso ahora se concentran entre -1.5 y 1.5. Notar que los datos rescalados ahora están centrados en cero.
+
+
+```{r}
+mu <- mean(u)
+sd <- sd(u)
+
+z <- (u - mu) / (sd)
+
+#Graficamos la nueva variable
+hist(z)
+```
+
+
+### Transformación Min-Max
+
+Consideremos unos datos que se distribuyen de forma normal como ejemplo.
+Notar que la mayoría de los datos están entre el intervalo -3 y 3
+
+
+```{r}
+# 10,000 datos con distribución normal con media cero y desviación estándar uno
+set.seed(1234)
+x <- rnorm(10000, mean= 0, sd = 1)
+
+# visualizar la distribución (histograma)
+ggplot() +
+  geom_histogram(aes(x = x))
+```
+
+**Participación alumnos**. ¿Cuántas observaciones están dentro de los intervalos (-1,1), (-2,2) y (-3,3)?. Intentar ejercicio en SAS.
+
+
+Realizamos la transformación Min-Max
+
+
+$$z = \frac{x - min(x)}{max(x) - min(x)}$$
+
+Notar que ahora los datos quedan acotados en el rango cero a uno, pero la variable se sigue distribuyendo igual. Los datos siguen siendo normales, pero fueron reescalados. 
+
+
+```{r}
+minimo <- min(x)
+maximo <- max(x)
+
+z <- (x- minimo) / (maximo - minimo)
+
+#Graficamos la nueva variable
+ggplot() +
+  geom_histogram(aes(x = z))
+```
+
+**En Resumen**. Ambas transformaciones reescalan los datos, una hace que los datos reescalados tengan media cero y otra hace que los datos queden acotados entre cero y uno.
+
+Es importante señakar que una transformación Z-score no convierne a nuestro valores en una variable aleatoria normal, sino que solamente los reescala. 
+
+

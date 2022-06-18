@@ -1,0 +1,359 @@
+---
+title: "01 Bootstrap"
+author: "LMT"
+date: "mayo de 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Bootstrap
+`(no paramétrico)`
+
+En la práctica usualmente sólo tendremos una muestra. Para conocer la distribución muestral necesitamos todas las muestras posibles, o usar la teoría desarrollada sobre muestreo.
+
+Usaremos un enfoque para estimar variabilidad a partir de una única muestra. Se construye la **distribución bootstrap** o **distribución de remuestreo**
+
+
+La distribución de remuestreo se construye tomando muchas remuestras, una remuestra es una muestra (independiente) con reemplazo **de mismo tamaño** que la muestra original. Notar que algunos elementos pueden seleccionarse más de 1 vez y otros no ser seleccionados.
+
+
+La idea de Boostrap es aproximar la distribución de la población con los datos de la muestra extraída. Es necesario conocer el diseño de muesteo utilizado para obtener la muestra original.
+
+
+**Boostrap**
+
+Dado un conjunto de tamaño n:
+
+1. Obtenemos una remuestra de tamaño n.
+2. Repetimos el paso anterior muchas veces.
+
+
+**participación alumnos** ¿por qué las muestras deben ser con reemplazo?, ¿qué pasaría si las muestras fueran sin reemplazo?.
+
+
+**Propiedades**
+
+Es importante mencionar que bootstrap no se usa para mejorar la estimación sino que se usa principalmente para evaluar la variabilidad de nuestros estimadores, estimando la dispersión de la distribución de muestreo.
+
+
+
+Bradley Efron fue premiado en 2018 por la creación de este método desarrollado en 1977 [Royal Statistical Society](https://rss.org.uk/news-publication/news-publications/2018/general-news/2018-international-prize-in-statistics-awarded-to/)
+
+**ejemplos**
+
+```{r}
+# Limpiar área de trabajo
+rm(list = ls())
+```
+
+
+```{r}
+# Cargar librerías
+suppressMessages(library(tidyverse))
+library(ggplot2)
+library(readr)
+library(stringr)
+
+library(haven)
+```
+
+
+
+
+Leer los datos
+```{r}
+suppressMessages(precios <- read_csv("/home/leonardo/Documentos/Acatlan/Datos/HousePrices/HousePrices.csv") %>% select(Id,SalePrice))
+glimpse(precios)
+```
+
+
+
+Tomemos 3 distintas muestras
+
+Muestra aleatoria
+```{r}
+set.seed(1234)
+muestra_1 <-  precios %>% 
+              sample_n(150) %>% 
+              mutate(muestra = "muestra 1")
+```
+
+
+Los primeros 150 elementos de los datos ordenados
+```{r}
+muestra_2 <-  precios %>% 
+              arrange(SalePrice) %>% 
+              slice(1:150) %>% 
+              mutate(muestra = "muestra 2")
+```
+
+algunos de los primeros y algunos de los últimos elementos
+```{r}
+muestra_3 <-  precios %>% 
+              arrange(SalePrice) %>% 
+              slice(c(16:108,1370:1426)) %>% 
+              mutate(muestra = "muestra 3")
+```
+
+
+
+Las estimaciones para el precio son
+```{r}
+muestras <- bind_rows(muestra_1,muestra_2,muestra_3)
+muestras %>% group_by(muestra) %>% summarise(prom = mean(SalePrice) )
+```
+
+
+Notar que se definieron 3 muestras solamente para ejemplificar el ejercicio de bootsrap para 3 distintos conjuntos de datos. El proceso sólo requiere se tenga 1 muestra 'original'.
+
+
+```{r}
+ggplot(muestras) + 
+  geom_histogram(mapping = aes(x = SalePrice, alpha = .75)) +
+  facet_wrap(~muestra, scales = "free")
+```
+
+
+
+
+Comparar donde están centradas las estimaciones respecto al parámetro poblacional del precio. 
+
+```{r}
+ggplot(precios) + 
+  geom_histogram(mapping = aes(x = SalePrice, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(muestra_1$SalePrice), color = "blue")
+```
+
+
+```{r}
+ggplot(precios) + 
+  geom_histogram(mapping = aes(x = SalePrice, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(muestra_2$SalePrice), color = "blue")
+```
+
+
+
+```{r}
+ggplot(precios) + 
+  geom_histogram(mapping = aes(x = SalePrice, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(muestra_3$SalePrice), color = "blue")
+```
+
+
+### Ejemplos Bootstrap
+
+
+Hacer una función para ejecutarla muchas veces
+
+```{r}
+funcion_prom_muestra <- function(datos,n=150) {
+
+muestra <- sample_n(datos,n, replace = TRUE)
+
+muestra %>% summarise(prom = mean(SalePrice), .groups = 'drop') %>% 
+            pull(prom)     
+  
+}
+
+
+```
+
+Ejecutar función para la muestra 1
+
+```{r warning=FALSE}
+set.seed(4060)
+distribucion_boostrap_1 <- rerun(1000,funcion_prom_muestra(muestra_1)) %>% flatten_dbl()
+```
+
+Graficar la distribución bootstrap 
+
+```{r}
+ggplot() + 
+  geom_histogram(mapping = aes(x = distribucion_boostrap_1, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(distribucion_boostrap_1), color = "blue")
+```
+
+**participación alumnos**. ¿Se distribuye normal?, ¿qué podemos hacer para comprobar normalidad?
+
+
+---
+
+Ejecutar función para la muestra 2
+
+```{r warning=FALSE}
+set.seed(4060)
+distribucion_boostrap_2 <- rerun(1000,funcion_prom_muestra(muestra_2)) %>% flatten_dbl()
+```
+
+Graficar la distribución bootstrap 
+
+```{r}
+ggplot() + 
+  geom_histogram(mapping = aes(x = distribucion_boostrap_2, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(distribucion_boostrap_2), color = "blue")
+```
+
+como lo habiamos comentado, hacer bootstrap no mejora nuestras estimaciones, sino que ayuda a conocer la variabilidad.
+
+---
+
+Ejecutar función para la muestra 3
+
+```{r warning=FALSE}
+set.seed(4060)
+distribucion_boostrap_3 <- rerun(1000,funcion_prom_muestra(muestra_3)) %>% flatten_dbl()
+```
+
+Graficar la distribución bootstrap 
+
+```{r}
+ggplot() + 
+  geom_histogram(mapping = aes(x = distribucion_boostrap_3, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = mean(distribucion_boostrap_3), color = "blue")
+```
+
+Se observa mayor variabilidad que respecto a la muestra 1 y hace sentido porque así fue diseñana. 
+
+
+---
+
+
+**Observaciones**. Si nuestra muestra original tiene sesgo, hacer boostrap no mejorará la estimación. Notar que no estamos haciendo supuestos sobre la distribución del estimador.  
+
+
+
+Al tratarse de un ejemplo de un estimador del cual sí existe teoría de muestreo podemos hacer comparaciones de de error esténdar empírico vs el error estándar teórico.
+
+
+**ejercicio** Intentar otros tamaños de muestra y otros valores de replicas bootstrap.
+
+### Intervalos de confianza 
+
+
+**intervalo normal**
+
+
+El error estandar del estimador es
+
+```{r}
+var <- muestra_1 %>% summarise(varianza = var(SalePrice)) %>% pull(varianza)
+# No se está considerando el factor de ajuste por población finita  
+var_est <- (var/150) #* (1 - n/N)
+## ee: error estándar
+ee <- sqrt(var_est)
+ee
+```
+
+
+Definir la confianza
+```{r}
+alpha <- 0.05
+z <- qnorm(1-alpha/2)
+z
+```
+
+Los límites del intervalo son
+```{r}
+limite_inferior <- mean(muestra_1$SalePrice) - z*ee
+limite_superior <- mean(muestra_1$SalePrice) + z*ee
+c(limite_inferior,limite_superior)
+```
+
+
+**intervalo de cuantiles**
+
+```{r}
+limite_inferior <- quantile(distribucion_boostrap_1,0.025)
+limite_superior <- quantile(distribucion_boostrap_1,0.975)
+
+intervalo <- c(limite_inferior,limite_superior)
+intervalo
+```
+
+```{r}
+ggplot() + 
+  geom_histogram(mapping = aes(x = distribucion_boostrap_1, alpha = .75)) + 
+  geom_vline(xintercept = quantile(distribucion_boostrap_1,0.025), color = "yellow") +
+  geom_vline(xintercept = quantile(distribucion_boostrap_1,0.975), color = "yellow")
+```
+
+
+
+
+### Ejemplo para la mediana
+
+En el caso de un estimador para la media, el estimador se distribuye normal por el TLC, no obstante, para estimadores de otras metricas, como la mediana esto no necesariamente cierto.
+
+
+
+```{r}
+ggplot(precios) + 
+  geom_histogram(mapping = aes(x = SalePrice, alpha = .75)) + 
+  geom_vline(xintercept = mean(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = median(precios$SalePrice), color = "blue")
+```
+
+
+
+
+Hacer una función para ejecutarla muchas veces
+
+```{r}
+funcion_mediana_muestra <- function(datos,n=150) {
+
+muestra <- sample_n(datos,n, replace = TRUE)
+
+muestra %>% summarise(mediana = median(SalePrice), .groups = 'drop') %>% 
+            pull(mediana)     
+  
+}
+
+
+```
+
+Ejecutar función para la muestra 1
+
+```{r warning=FALSE}
+set.seed(4060)
+mediana_boostrap_1 <- rerun(1000,funcion_mediana_muestra(muestra_1)) %>% flatten_dbl()
+```
+
+Graficar la distribución bootstrap  de la **mediana**
+
+```{r}
+ggplot() + 
+  geom_histogram(mapping = aes(x = mediana_boostrap_1, alpha = .75)) + 
+  geom_vline(xintercept = median(precios$SalePrice), color = "red") +
+  geom_vline(xintercept = median(mediana_boostrap_1), color = "blue")
+```
+
+Es este caso, no tenemos información de la distribución del estimador de la mediana, no obstante, al hacer bootstrap podemos construir un intervalo de confianza basado en cuantiles
+
+
+Notar que se pueden obtener intervalos que no son necesariamente simétricos.
+
+
+**ejercicio** Hacer boostrap utilizando los datos del conteo rápido de las elecciones electorales de 2006. Hacer la estimación para el estimador de razón que nos dice el porcentaje de votos. Nota, el remuestreo debe respetar el diseño con el que fue realizada la selección de la muestra, es decir, para cada estrato se debe hacer el remuestreo.
+
+
+---
+
+ **Comentarios**
+ 
+ - Para un mismo conjunto de datos, hacer bootstrap arrojará distintos estimadores (aunque muy parecidos).
+ - Se recomienda utilizar replicaciones de tamaño superiores a  1,000 o 10,000 
+
+
+
+
+
+

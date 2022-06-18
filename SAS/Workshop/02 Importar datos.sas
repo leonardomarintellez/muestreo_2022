@@ -1,0 +1,38 @@
+
+
+PROC DATASETS LIB=WORK KILL; QUIT;
+
+
+/**############## EXPORTAR DATOS ##############**/
+
+/*CSV*/
+
+PROC EXPORT DATA= SASHELP.CARS 
+ OUTFILE= "/home/u60151886/datos/CARS.csv"
+ DBMS=CSV REPLACE;
+RUN;
+
+PROC EXPORT DATA= SASHELP.IRIS 
+ OUTFILE= "/home/u60151886/datos/IRIS.csv"
+ DBMS=CSV REPLACE;
+RUN;
+
+
+/**############## IMPORTAR DATOS ##############**/
+
+/*CSV*/
+
+PROC IMPORT DATAFILE='/home/u60151886/datos/IRIS.csv'
+	DBMS=CSV	REPLACE		/*DATA BASE MANAGEMENT SYSTEM*/
+	OUT=WORK.IRIS;
+	GETNAMES=YES;
+RUN;
+
+PROC CONTENTS DATA=WORK.IRIS; RUN;
+
+
+
+/*Revisar la ayuda para mayor detalle*/
+
+
+
